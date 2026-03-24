@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Holocene Calendar Converter",
+  "version": "1.0",
+  "description": "Converts years to a custom Holocene calendar system.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["holocene-script.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": []
+}
