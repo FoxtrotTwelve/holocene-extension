@@ -24,25 +24,43 @@ function normalizeEra(era) {
     return era;
 }
 
-// Use this to determine the era for each number in a range
+/**
+ * Determine the era for a number in a range or a single year.
+ * Rules:
+ * - If there’s a suffix immediately after the number, use it.
+ * - For first number in range:
+ *    - If the second number is BCE, force first to BCE.
+ *    - Otherwise, use prefix or default CE.
+ * - For second number, fallback to suffix, prefix, or CE.
+ */
 function getEraForNumber(numberStr, position, prefixEra, suffixEra, fullMatch) {
-    // Check for a suffix immediately after this number
-    const suffixMatch = fullMatch.match(new RegExp(`${numberStr}\\s*(BC|BCE|CE|AD|BP|B\\.C\\.|B\\.C\\.E\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.)`, 'i'));
-    
-    // Look for a global default at the end of the range (applies if first number has no label)
-    const defaultEraMatch = fullMatch.match(/(BC|BCE|CE|AD|BP|B\.C\.|B\.C\.E\.|C\.E\.|A\.D\.|B\.P\.)$/i);
-    const defaultEra = defaultEraMatch ? defaultEraMatch[1] : "CE";
+    // Check for suffix immediately after this number
+    const suffixRegex = new RegExp(`\\b${numberStr}\\b\\s*(BC|BCE|CE|AD|BP|B\\.C\\.|B\\.C\\.E\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.)`, 'i');
+    const suffixMatch = fullMatch.match(suffixRegex);
 
-    // Decide which era to use
-    let era;
     if (suffixMatch) {
-        era = suffixMatch[1]; // explicit suffix near the number
-    } else if (position === "start") {
-        era = suffixEra || prefixEra || defaultEra; // fallback for first number
+        return normalizeEra(suffixMatch[1]);
+    }
+
+    // Determine era of the other end of the range
+    const otherEndMatch = fullMatch.match(/(\d{1,6})\s*(BC|BCE|CE|AD|BP|B\.C\.|B\.C\.E\.|C\.E\.|A\.D\.|B\.P\.)$/i);
+    const otherEra = otherEndMatch ? normalizeEra(otherEndMatch[2]) : null;
+
+    let era;
+
+    if (position === "start") {
+        // If second number is BCE/BC, first number must also be BCE/BC
+        if (otherEra === "BCE" || otherEra === "BC") {
+            era = "BCE";
+        } else {
+            era = prefixEra || "CE";
+        }
     } else if (position === "end") {
-        era = suffixEra || prefixEra || defaultEra; // fallback for second number
+        era = suffixEra || prefixEra || "CE";
+    } else if (position === "single") {
+        era = suffixEra || prefixEra || "CE";
     } else {
-        era = defaultEra;
+        era = "CE";
     }
 
     return normalizeEra(era);
