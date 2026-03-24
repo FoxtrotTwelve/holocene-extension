@@ -80,7 +80,7 @@ function processRanges(text) {
         const converted1 = convertYear(year1, era || prefix);
         const converted2 = convertYear(year2, era || prefix);
 
-        return `${converted1}–${converted2} HE`;
+        return `${converted1}–${converted2} H.E. (Holocene Era)`;
     });
 }
 
@@ -95,7 +95,7 @@ function processSingleYears(text) {
         // Convert to Holocene year
         const converted = convertYear(year, era);
 
-        return `${converted} H.E.`;
+        return `${converted} H.E. (Holocene Era)`;
     });
 }
 
@@ -106,7 +106,7 @@ function processUnlabeledYears(text) {
         const year = parseInt(match, 10);
         const converted = convertYear(year, "AD"); // default to AD/CE
 
-        return `${converted} HE`;
+        return `${converted} H.E. (Holocene Era)`;
     });
 }
 
