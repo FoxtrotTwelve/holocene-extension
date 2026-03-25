@@ -321,7 +321,7 @@ walkDOMAndProcess(document.body);
 
 const allTests = [
 
-  // --- ORIGINAL TESTS ---
+  // --- RANGE TESTS ---
   { input: "2000 BCE–1996 CE", expected: "8001–11996 H.E. (Holocene Era) [converted from 2000 BCE–1996 CE]" },
   { input: "500–1000 BCE", expected: "9501–9001 H.E. (Holocene Era) [converted from 500 BCE–1000 BCE]" },
   { input: "1500 CE", expected: "11500 H.E. (Holocene Era) [converted from 1500 CE]" },
@@ -329,6 +329,8 @@ const allTests = [
   { input: "50 BC–50 AD", expected: "9951–10050 H.E. (Holocene Era) [converted from 50 BCE–50 CE]" },
   { input: "300 BP–100 BP", expected: "11650–11850 H.E. (Holocene Era) [converted from 300 BP–100 BP]" },
   { input: "1,500–2,000 CE", expected: "11500–12000 H.E. (Holocene Era) [converted from 1500 CE–2000 CE]" },
+  { input: "1200 to 1400 CE", expected: "11200–11400 H.E. (Holocene Era) [converted from 1200 CE–1400 CE]" },
+  { input: "1000 BCE to 500 BCE", expected: "9001–9501 H.E. (Holocene Era) [converted from 1000 BCE–500 BCE]" },
 
   // --- BP SINGLE YEARS ---
   { input: "300 BP", expected: "11650 H.E. (Holocene Era) [converted from 300 BP]" },
@@ -356,7 +358,7 @@ const allTests = [
   { input: "300 BP–100 BP", expected: "11650–11850 H.E. (Holocene Era) [converted from 300 BP–100 BP]" },
   { input: "300–100 BP", expected: "11650–11850 H.E. (Holocene Era) [converted from 300 BP–100 BP]" },
 
-  // --- Fuzzy Prefix ---
+  // --- FUZZY DATES ---
   { input: "c. 500 BCE", expected: "c. 9501 H.E. (Holocene Era) [converted from 500 BCE]" },
   { input: "~1200 AD", expected: "~11200 H.E. (Holocene Era) [converted from 1200 CE]" },
   { input: "around 300 BC", expected: "around 9701 H.E. (Holocene Era) [converted from 300 BCE]" },
