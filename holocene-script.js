@@ -1,4 +1,4 @@
-const ERA_PATTERN = "BC|BCE|CE|AD|BP|B\\.C\\.|B\\.C\\.E\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.";
+const ERA_PATTERN = "BCE|BC|CE|AD|BP|B\\.C\\.E\\.|B\\.C\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.";
 const FUZZY_MODIFIER = "(?:early|mid-|late|c\\.|ca\\.|circa|~|around)\\s*";
 const ORDINAL_ONES = {
   first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
@@ -32,7 +32,9 @@ const yearRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?` +      // group 1: fuzzy prefix (optional)
   `(?:(AD|A\\.D\\.)\\s*)?` +      // group 2: prefix era (optional)
   `(\\d{1,3}(?:,\\d{3})*|\\d{1,6})` + // group 3: year
-  `(?:\\s*(${ERA_PATTERN}))\\b`,       // group 4: suffix era
+  //`(?:\\s*(${ERA_PATTERN}))\\b`,       // group 4: suffix era
+  //`\\s*(${ERA_PATTERN})(?=\\b|[^a-zA-Z])`,
+  `\\s*(${ERA_PATTERN})\\.?`,
   "gi"
 );
 
@@ -342,9 +344,10 @@ function processUnlabeledYears(text) {
         if (!isLikelyUnlabeledYear(match, string, offset)) return match;
 
         const year = parseInt(match, 10);
-        const converted = convertYear(year, "CE");
+        const era = "CE";
+        const converted = convertYear(year, era);
 
-        return `${converted} H.E. (Holocene Era) [converted from ${year}]`;
+        return `${converted} H.E. (Holocene Era) [converted from ${year} ${era}]`;
     });
 }
 
@@ -510,6 +513,12 @@ walkDOMAndProcess(document.body);
 
 const allTests = [
 
+  // --- SINGLE DATES ---
+  { input: "1948", expected: "11948 H.E. (Holocene Era) [converted from 1948 CE]" },
+  { input: "44BC", expected: "9957 H.E. (Holocene Era) [converted from 44 BCE]" },
+  { input: "1865 A.D.", expected: "11865 H.E. (Holocene Era) [converted from 1865 CE]" },
+  
+  
   // --- RANGE TESTS ---
   { input: "2000 BCE–1996 CE", expected: "8001–11996 H.E. (Holocene Era) [converted from 2000 BCE–1996 CE]" },
   { input: "500–1000 BCE", expected: "9501–9001 H.E. (Holocene Era) [converted from 500 BCE–1000 BCE]" },
@@ -552,9 +561,9 @@ const allTests = [
   { input: "~1200 AD", expected: "~11200 H.E. (Holocene Era) [converted from 1200 CE]" },
   { input: "around 300 BC", expected: "around 9701 H.E. (Holocene Era) [converted from 300 BCE]" },
   { input: "c. 1000–1500", expected: "c. 11000–11500 H.E. (Holocene Era) [converted from 1000 CE–1500 CE]" },
-  { input: "c. 1200", expected: "c. 11200 H.E. (Holocene Era) [converted from 1200]" },
-  { input: "~ 300", expected: "~ 10300 H.E. (Holocene Era) [converted from 300]" },
-  { input: "around 1000", expected: "around 11000 H.E. (Holocene Era) [converted from 1000]" },
+  { input: "c. 1200", expected: "c. 11200 H.E. (Holocene Era) [converted from 1200 CE]" },
+  { input: "~ 300", expected: "~ 10300 H.E. (Holocene Era) [converted from 300 CE]" },
+  { input: "around 1000", expected: "around 11000 H.E. (Holocene Era) [converted from 1000 CE]" },
 
   // --- ZERO AND NEGATIVE ---
   { input: "10000 BCE", expected: "1 H.E. (Holocene Era) [converted from 10000 BCE]" },
