@@ -1,5 +1,5 @@
 const ERA_PATTERN = "BC|BCE|CE|AD|BP|B\\.C\\.|B\\.C\\.E\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.";
-const FUZZY_MODIFIER = "(?:early|mid-|late|c\\.|ca\\.|~|around)\\s*";
+const FUZZY_MODIFIER = "(?:early|mid-|late|c\\.|ca\\.|circa|~|around)\\s*";
 const ORDINAL_ONES = {
   first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
   sixth: 6, seventh: 7, eighth: 8, ninth: 9
@@ -18,6 +18,14 @@ const TENS_BASE = {
   twenty: 20, thirty: 30, forty: 40,
   fifty: 50, sixty: 60, seventy: 70,
   eighty: 80, ninety: 90
+};
+const NUMBER_WORDS = {
+  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5,
+  six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
+  fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+  twenty: 20, thirty: 30, forty: 40, fifty: 50,
+  sixty: 60, seventy: 70, eighty: 80, ninety: 90
 };
 
 const yearRegex = new RegExp(
@@ -47,8 +55,10 @@ const centuryRegex = new RegExp(
 );
 
 // Plural references (e.g., "1800s BCE")
+//const pluralRegex = /\b(\d{1,4})s(?!\s*H\.E\.)\s*(${ERA_PATTERN})?\b/gi;
+//const pluralRegex = new RegExp( `\\b(\\d{1,4})s\\s*(${ERA_PATTERN})?`, "gi" );
 const pluralRegex = new RegExp(
-    `\\b(\\d{1,4})s\\s*(${ERA_PATTERN})?`, 
+    `\\b(${FUZZY_MODIFIER})?(\\d{1,4})s\\s*(${ERA_PATTERN})?\\b`, 
     "gi"
 );
 
@@ -60,6 +70,13 @@ const writtenCenturyRegex = new RegExp(
   `sixteenth|seventeenth|eighteenth|nineteenth|` +
   `twentieth|thirtieth|fortieth|fiftieth|sixtieth|seventieth|eightieth|ninetieth)` +
   `\\s+century\\s*(${ERA_PATTERN})?\\b`,
+  "gi"
+);
+
+const writtenHundredsRegex = new RegExp(
+  `\\b(${FUZZY_MODIFIER})?` +
+  `(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\\s+hundreds` +
+  `(?:\\s*(${ERA_PATTERN}))?\\b`,
   "gi"
 );
 
@@ -146,6 +163,16 @@ function convertYear(year, era) {
     }
 }
 
+function convertHundredYear(year, era) {
+
+
+    if (era === "BC" || era === "BCE") {
+        return 10001 - year;
+    } else {
+        return year + 10000; // AD / CE
+    }
+}
+
 function isLikelyUnlabeledYear(match, nodeValue, index) {
     const year = parseInt(match, 10);
 
@@ -195,6 +222,33 @@ function parseWrittenOrdinal(word) {
   }
 
   return null;
+}
+
+function parseWrittenHundreds(word) {
+    word = word.toLowerCase();
+    const mapping = {
+        one: 100,
+        two: 200,
+        three: 300,
+        four: 400,
+        five: 500,
+        six: 600,
+        seven: 700,
+        eight: 800,
+        nine: 900,
+        ten: 1000,
+        eleven: 1100,
+        twelve: 1200,
+        thirteen: 1300,
+        fourteen: 1400,
+        fifteen: 1500,
+        sixteen: 1600,
+        seventeen: 1700,
+        eighteen: 1800,
+        nineteen: 1900,
+        twenty: 2000
+    };
+    return mapping[word] || null;
 }
 
 //--------------------------------------------------------------
@@ -295,12 +349,14 @@ function processUnlabeledYears(text) {
 }
 
 function processPluralReferences(text) {
-    const pluralRegex = new RegExp(`\\b(\\d{1,4})s\\s*(${ERA_PATTERN})?\\b`, "gi");
+    //const pluralRegex = new RegExp(`\\b(\\d{1,4})s\\s*(${ERA_PATTERN})?\\b`, "gi");
+    //const pluralRegex = new RegExp(`\\b(\\d{1,4})s(?!\\s*H\\.E\\.)\\s*(${ERA_PATTERN})?\\b`, "gi");
 
-    return text.replace(pluralRegex, (match, numberStr, eraStr, offset, fullText) => {
+    return text.replace(pluralRegex, (match, fuzzyPrefix, numberStr, eraStr, offset, fullText) => {
         if (isInsideConvertedText(fullText, offset)) return match;
         if (match.includes("H.E.")) return match;
 
+        const formattedPrefix = formatPrefix(fuzzyPrefix);
         const number = parseInt(numberStr.replace(/,/g, ""), 10);
         const era = normalizeEra(eraStr || "CE");  // default CE if no era
 
@@ -309,7 +365,7 @@ function processPluralReferences(text) {
             convertedNumber -= 1; // BCE adjustment for broad centuries
         }
 
-        return `${convertedNumber}s H.E. (Holocene Era) [converted from ${numberStr}s ${eraStr || "CE"}]`;
+        return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${numberStr}s ${eraStr || "CE"}]`;
     });
 }
 
@@ -355,12 +411,35 @@ function processWrittenCenturies(text) {
       const num = parseWrittenOrdinal(word);
       if (!num) return match;
 
-      const prefix = fuzzy ? fuzzy.trim() + " " : "";
+      const prefix = formatPrefix(fuzzy);
       const suffix = getOrdinalSuffix(num);
 
       return `${prefix}${num}${suffix} century${era ? " " + era : ""}`;
     }
   );
+}
+
+function processWrittenHundreds(text) {
+    return text.replace(writtenHundredsRegex, (match, fuzzy, word, era, offset, fullText) => {
+        if (isInsideConvertedText(fullText, offset)) return match;
+        if (match.includes("H.E.")) return match;
+
+        const baseNumber = parseWrittenHundreds(word);
+        if (!baseNumber) return match;
+
+        const formattedPrefix = formatPrefix(fuzzy);
+        const normalizedEra = normalizeEra(era || "CE"); // default CE if no era
+
+        // Pass number through convertYear for H.E. conversion
+        let convertedNumber = convertHundredYear(baseNumber, normalizedEra);
+
+        // BCE adjustment for plural centuries
+        if (normalizedEra === "BCE" || normalizedEra === "BC") {
+            convertedNumber -= 1;
+        }
+
+        return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${baseNumber} ${normalizedEra}]`;
+    });
 }
 
 function processText(text) {
@@ -379,6 +458,9 @@ function processText(text) {
 
     // Processes plural century references
     text = processPluralReferences(text);
+
+    //MOVING DOWN    // Convert written hundreds (e.g., "nineteen hundreds") to numeric form first
+    text = processWrittenHundreds(text);
 
     // Processes written century numbers and converts them to numbers for the next step
     text = processWrittenCenturies(text);
@@ -491,6 +573,11 @@ const allTests = [
   { input: "mid-1800s CE", expected: "mid-11800s H.E. (Holocene Era) [converted from 1800s CE]" },
   { input: "late 1400s CE", expected: "late 11400s H.E. (Holocene Era) [converted from 1400s CE]" },
 
+    // --- FUZZY PREFIX PLURAL CENTURIES ---
+    { input: "early 500s BCE", expected: "early 9500s H.E. (Holocene Era) [converted from 500s BCE]" },
+    { input: "mid-1800s CE", expected: "mid-11800s H.E. (Holocene Era) [converted from 1800s CE]" },
+    { input: "around 1300s BCE", expected: "around 8700s H.E. (Holocene Era) [converted from 1300s BCE]" },
+
   // --- CENTURY NUMBER REFERENCE TESTS ---
   // CE / AD centuries
   { input: "15th century CE", expected: "11400s H.E. (Holocene Era) [converted from 15th century CE]" },
@@ -540,27 +627,37 @@ const allTests = [
     { input: "ninety-ninth century CE", expected: "19800s H.E. (Holocene Era) [converted from 99th century CE]" },
     { input: "ninety ninth century CE", expected: "19800s H.E. (Holocene Era) [converted from 99th century CE]" },
 
-
+    //Other
     { input: "early fifteenth century CE", expected: "early 11400s H.E. (Holocene Era) [converted from 15th century CE]" },
     { input: "mid-twentieth century CE", expected: "mid-11900s H.E. (Holocene Era) [converted from 20th century CE]" },
     { input: "late third century BC", expected: "late 9600s H.E. (Holocene Era) [converted from 3rd century BC]" },
-
     { input: "c. twenty-first century CE", expected: "c. 12000s H.E. (Holocene Era) [converted from 21st century CE]" },
     { input: "~ twenty first century CE", expected: "~ 12000s H.E. (Holocene Era) [converted from 21st century CE]" },
     { input: "around fifth century BCE", expected: "around 9400s H.E. (Holocene Era) [converted from 5th century BCE]" },
-
-
     { input: "The fifteenth century CE saw major changes", expected: "The 11400s H.E. (Holocene Era) [converted from 15th century CE] saw major changes" },
-
     { input: "In the early twenty-first century CE, technology advanced rapidly",
         expected: "In the early 12000s H.E. (Holocene Era) [converted from 21st century CE], technology advanced rapidly" },
-
     { input: "Late third century BC events reshaped the region",
         expected: "Late 9600s H.E. (Holocene Era) [converted from 3rd century BC] events reshaped the region" },
-
     { input: "He finished in first place", expected: "He finished in first place" },
     { input: "She lived for twenty years", expected: "She lived for twenty years" },
-    { input: "This is a second attempt", expected: "This is a second attempt" }
+    { input: "This is a second attempt", expected: "This is a second attempt" },
+
+
+    // --- WRITTEN HUNDREDS TESTS ---
+    { input: "nineteen hundreds CE", expected: "11900s H.E. (Holocene Era) [converted from 1900 CE]" },
+    { input: "early nineteen hundreds", expected: "early 11900s H.E. (Holocene Era) [converted from 1900 CE]" },
+    { input: "mid-nineteen hundreds", expected: "mid-11900s H.E. (Holocene Era) [converted from 1900 CE]" },
+    { input: "late nineteen hundreds BCE", expected: "late 8100s H.E. (Holocene Era) [converted from 1900 BCE]" },
+    { input: "fifteen hundreds", expected: "11500s H.E. (Holocene Era) [converted from 1500 CE]" },
+    { input: "early fifteen hundreds BCE", expected: "early 8500s H.E. (Holocene Era) [converted from 1500 BCE]" },
+    { input: "c. nineteen hundreds", expected: "c. 11900s H.E. (Holocene Era) [converted from 1900 CE]" },
+    { input: "sixteen hundreds", expected: "11600s H.E. (Holocene Era) [converted from 1600 CE]" },
+    { input: "around thirteen hundreds BCE", expected: "around 8700s H.E. (Holocene Era) [converted from 1300 BCE]" }
+
+
+
+
 
 ];
 
