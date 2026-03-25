@@ -1,5 +1,8 @@
 const ERA_PATTERN = "BC|BCE|CE|AD|BP|B\\.C\\.|B\\.C\\.E\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.";
+const FUZZY_PREFIX = "(c\\.|ca\\.|~|around)";
+
 const yearRegex = new RegExp(
+  `\\b(?:${FUZZY_PREFIX}\\s*)?` +
   `\\b(?:(AD|A\\.D\\.)\\s*)?` +
   `(\\d{1,3}(?:,\\d{3})*|\\d{1,6})` +
   `(?:\\s*(${ERA_PATTERN}))\\b`,
@@ -7,6 +10,7 @@ const yearRegex = new RegExp(
 );
 
 const rangeRegex = new RegExp(
+  `\\b(?:${FUZZY_PREFIX}\\s*)?` +
   `\\b(?:(AD|A\\.D\\.)\\s*)?` +                 // prefix era
   `(\\d{1,3}(?:,\\d{3})*|\\d{1,6})` +          // year1
   `(?:\\s*(${ERA_PATTERN}))?` +                // era1 (NEW)
@@ -85,7 +89,17 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     return true;
 }
 
+// function isInsideConvertedText(text, offset) {
+//     const before = text.slice(0, offset);
+//     const lastOpen = before.lastIndexOf("[converted from");
+//     const lastClose = before.lastIndexOf("]");
+
+//     return lastOpen > lastClose;
+// }
+
 function isInsideConvertedText(text, offset) {
+    if (!text || typeof text !== "string") return false;
+
     const before = text.slice(0, offset);
     const lastOpen = before.lastIndexOf("[converted from");
     const lastClose = before.lastIndexOf("]");
@@ -101,13 +115,14 @@ function isInsideConvertedText(text, offset) {
 //----------------CORE TEXT PROCESSING-----------------
 
 function processRanges(text) {
-    return text.replace(rangeRegex, (match, prefixEra, y1, era1, y2, era2, offset, string) => {
+    return text.replace(rangeRegex, (match, fuzzyPrefix, prefixEra, y1, era1, y2, era2, offset, string) => {
 
         if (isInsideConvertedText(string, offset)) return match;
         if (match.includes("H.E.")) return match;
 
         if (!y1 || !y2) return match;
 
+        const prefix = fuzzyPrefix ? fuzzyPrefix.trim() + " " : "";
         const year1 = parseYear(y1);
         const year2 = parseYear(y2);
 
@@ -154,12 +169,12 @@ function processRanges(text) {
         const converted1 = convertYear(year1, finalEra1);
         const converted2 = convertYear(year2, finalEra2);
 
-        return `${converted1}–${converted2} H.E. (Holocene Era) [converted from ${year1} ${finalEra1}–${year2} ${finalEra2}]`;
+        return `${prefix}${converted1}–${converted2} H.E. (Holocene Era) [converted from ${year1} ${finalEra1}–${year2} ${finalEra2}]`;
     });
 }
 
 function processSingleYears(text) {
-    return text.replace(yearRegex, (match, prefixEra, yearStr, suffixEra, offset, string) => {
+    return text.replace(yearRegex, (match, fuzzyPrefix, prefixEra, yearStr, suffixEra, offset, string) => {
 
         if (!yearStr) return match;
 
@@ -167,12 +182,13 @@ function processSingleYears(text) {
         if (isInsideConvertedText(string, offset)) return match;
         if (match.includes("H.E.")) return match;
 
+        const prefix = fuzzyPrefix ? fuzzyPrefix.trim() + " " : "";
         const year = parseYear(yearStr);
         const era = normalizeEra(suffixEra || prefixEra || "CE");
 
         const converted = convertYear(year, era);
 
-        return `${converted} H.E. (Holocene Era) [converted from ${year} ${era}]`;
+        return `${prefix}${converted} H.E. (Holocene Era) [converted from ${year} ${era}]`;
     });
 }
 
@@ -224,7 +240,7 @@ function processTextNode(node) {
 function walkDOMAndProcess(node) {
     if (node.nodeType === Node.ELEMENT_NODE) {
         const tag = node.tagName.toLowerCase();
-        if (["script", "style", "textarea", "input"].includes(tag)) return;
+        if (["script", "style", "textarea", "input", "a", "code"].includes(tag)) return;
         node.childNodes.forEach(walkDOMAndProcess);
     } else if (node.nodeType === Node.TEXT_NODE) {
         processTextNode(node);
@@ -278,7 +294,13 @@ const allTests = [
   { input: "2000–50 BCE", expected: "8001–9951 H.E. (Holocene Era) [converted from 2000 BCE–50 BCE]" },
 
   // --- BP RANGE ---
-  { input: "300 BP–100 BP", expected: "11650–11850 H.E. (Holocene Era) [converted from 300 BP–100 BP]" }
+  { input: "300 BP–100 BP", expected: "11650–11850 H.E. (Holocene Era) [converted from 300 BP–100 BP]" },
+
+  // --- Fuzzy Prefix ---
+  { input: "c. 500 BCE", expected: "c. 9501 H.E. (Holocene Era) [converted from 500 BCE]" },
+  { input: "~1200 AD", expected: "~11200 H.E. (Holocene Era) [converted from 1200 CE]" },
+  { input: "around 300 BC", expected: "around 9701 H.E. (Holocene Era) [converted from 300 BCE]" },
+  { input: "c. 1000–1500", expected: "c. 11000–11500 H.E. (Holocene Era) [converted from 1000 CE–1500 CE]" }
 
 ];
 
@@ -294,6 +316,7 @@ allTests.forEach(({ input, expected }) => {
     console.log("------");
   } else {
     console.log(`${pass} ${input}`);
+    console.log(`Output: ${output}`);
   }
 });
 
