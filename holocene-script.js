@@ -147,13 +147,17 @@ function processRanges(text) {
 
         let finalEra1, finalEra2;
 
-        //If end is BCE → start must also be BCE
-        if (normEra2 === "BCE") {
+        // --- Handle BP ranges first
+        if (normEra1 === "BP" || normEra2 === "BP") {
+            finalEra1 = "BP";
+            finalEra2 = "BP";
+        } 
+        // --- Then handle BCE ranges
+        else if (normEra2 === "BCE") {
             finalEra1 = "BCE";
             finalEra2 = "BCE";
-        }
-
-        //Fully unlabeled range
+        } 
+        // --- Fully unlabeled range
         else if (!normEra1 && !normEra2 && !normPrefix) {
             if (year1 <= year2) {
                 finalEra1 = "CE";
@@ -161,16 +165,11 @@ function processRanges(text) {
             } else {
                 return match; // ambiguous → do not convert
             }
-        } else {
+        } 
+        // --- Mixed cases
+        else {
             finalEra2 = normEra2 || normEra1 || normPrefix || "CE";
-
-            if (normEra1) {
-                finalEra1 = normEra1;
-            } else if (normPrefix) {
-                finalEra1 = normPrefix;
-            } else {
-                finalEra1 = finalEra2;
-            }
+            finalEra1 = normEra1 || normPrefix || finalEra2;
         }
 
         const converted1 = convertYear(year1, finalEra1);
@@ -355,6 +354,7 @@ const allTests = [
 
   // --- BP RANGE ---
   { input: "300 BP–100 BP", expected: "11650–11850 H.E. (Holocene Era) [converted from 300 BP–100 BP]" },
+  { input: "300–100 BP", expected: "11650–11850 H.E. (Holocene Era) [converted from 300 BP–100 BP]" },
 
   // --- Fuzzy Prefix ---
   { input: "c. 500 BCE", expected: "c. 9501 H.E. (Holocene Era) [converted from 500 BCE]" },
