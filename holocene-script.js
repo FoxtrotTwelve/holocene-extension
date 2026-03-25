@@ -1,5 +1,24 @@
 const ERA_PATTERN = "BC|BCE|CE|AD|BP|B\\.C\\.|B\\.C\\.E\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.";
 const FUZZY_MODIFIER = "(?:early|mid-|late|c\\.|ca\\.|~|around)\\s*";
+const ORDINAL_ONES = {
+  first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
+  sixth: 6, seventh: 7, eighth: 8, ninth: 9
+};
+const ORDINAL_TEENS = {
+  tenth: 10, eleventh: 11, twelfth: 12, thirteenth: 13,
+  fourteenth: 14, fifteenth: 15, sixteenth: 16,
+  seventeenth: 17, eighteenth: 18, nineteenth: 19
+};
+const ORDINAL_TENS = {
+  twentieth: 20, thirtieth: 30, fortieth: 40,
+  fiftieth: 50, sixtieth: 60, seventieth: 70,
+  eightieth: 80, ninetieth: 90
+};
+const TENS_BASE = {
+  twenty: 20, thirty: 30, forty: 40,
+  fifty: 50, sixty: 60, seventy: 70,
+  eighty: 80, ninety: 90
+};
 
 const yearRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?` +      // group 1: fuzzy prefix (optional)
@@ -33,6 +52,17 @@ const pluralRegex = new RegExp(
     "gi"
 );
 
+const writtenCenturyRegex = new RegExp(
+  `\\b(${FUZZY_MODIFIER})?` +
+  `((?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-\\w+)?|` +
+  `first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|` +
+  `tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|` +
+  `sixteenth|seventeenth|eighteenth|nineteenth|` +
+  `twentieth|thirtieth|fortieth|fiftieth|sixtieth|seventieth|eightieth|ninetieth)` +
+  `\\s+century\\s*(${ERA_PATTERN})?\\b`,
+  "gi"
+);
+
 
 
 
@@ -55,6 +85,34 @@ function normalizeEra(era) {
     }
 
     return era;
+}
+
+/**
+ * Returns a properly formatted prefix for converted dates.
+ * Preserves hyphens without adding extra space, adds space for word prefixes.
+ * 
+ * Examples:
+ *   "mid-"   -> "mid-"
+ *   "early"  -> "early "
+ *   ""       -> ""
+ */
+function formatPrefix(prefix) {
+    if (!prefix) return "";
+    prefix = prefix.trim();
+    return prefix.endsWith("-") ? prefix : prefix + " ";
+}
+
+function getOrdinalSuffix(n) {
+    const j = n % 10;
+    const k = n % 100;
+
+    if (k >= 11 && k <= 13) return "th";
+
+    if (j === 1) return "st";
+    if (j === 2) return "nd";
+    if (j === 3) return "rd";
+
+    return "th";
 }
 
 function convertFromBPToBC(year){
@@ -114,6 +172,31 @@ function isInsideConvertedText(text, offset) {
     return lastOpen > lastClose;
 }
 
+function normalizeOrdinalSpacing(text) {
+  return text.replace(
+    /\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\s+(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth)\b/gi,
+    (_, tens, ones) => `${tens}-${ones}`
+  );
+}
+
+function parseWrittenOrdinal(word) {
+  word = word.toLowerCase();
+
+  if (ORDINAL_ONES[word]) return ORDINAL_ONES[word];
+  if (ORDINAL_TEENS[word]) return ORDINAL_TEENS[word];
+  if (ORDINAL_TENS[word]) return ORDINAL_TENS[word];
+
+  const parts = word.split("-");
+  if (parts.length === 2) {
+    const [tens, ones] = parts;
+    if (TENS_BASE[tens] && ORDINAL_ONES[ones]) {
+      return TENS_BASE[tens] + ORDINAL_ONES[ones];
+    }
+  }
+
+  return null;
+}
+
 //--------------------------------------------------------------
 
 
@@ -129,7 +212,7 @@ function processRanges(text) {
 
         if (!y1 || !y2) return match;
 
-        const prefix = fuzzyPrefix ? fuzzyPrefix.trim() + " " : "";
+        const formattedPrefix = formatPrefix(fuzzyPrefix);
         const year1 = parseYear(y1);
         const year2 = parseYear(y2);
 
@@ -175,7 +258,7 @@ function processRanges(text) {
         const converted1 = convertYear(year1, finalEra1);
         const converted2 = convertYear(year2, finalEra2);
 
-        return `${prefix}${converted1}–${converted2} H.E. (Holocene Era) [converted from ${year1} ${finalEra1}–${year2} ${finalEra2}]`;
+        return `${formattedPrefix}${converted1}–${converted2} H.E. (Holocene Era) [converted from ${year1} ${finalEra1}–${year2} ${finalEra2}]`;
     });
 }
 
@@ -187,13 +270,13 @@ function processSingleYears(text) {
         if (isInsideConvertedText(string, offset)) return match;
         if (match.includes("H.E.")) return match;
 
-        const prefix = fuzzyPrefix ? fuzzyPrefix.trim() + " " : "";
+        const formattedPrefix = formatPrefix(fuzzyPrefix);
         const year = parseYear(yearStr);
         const era = normalizeEra(suffixEra || prefixEra || "CE");
 
         const converted = convertYear(year, era);
 
-        return `${prefix}${converted} H.E. (Holocene Era) [converted from ${year} ${era}]`;
+        return `${formattedPrefix}${converted} H.E. (Holocene Era) [converted from ${year} ${era}]`;
     });
 }
 
@@ -235,7 +318,7 @@ function processCenturyReferences(text) {
         if (isInsideConvertedText(fullText, offset)) return match;
         if (match.includes("H.E.")) return match;
 
-        const prefix = fuzzyPrefix || "";  // preserve the original modifier
+        const formattedPrefix = formatPrefix(fuzzyPrefix);  // preserve the original modifier
         const centuryNumber = parseInt(centuryNumberStr, 10);
         const era = normalizeEra(eraStr || "CE"); // default CE
 
@@ -255,8 +338,29 @@ function processCenturyReferences(text) {
             convertedNumber -= 1;
         }
 
-        return `${prefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${centuryNumberStr}${ordinal} century${eraStr ? " " + eraStr : ""}]`;
+        return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${centuryNumberStr}${ordinal} century${eraStr ? " " + eraStr : ""}]`;
     });
+}
+
+function processWrittenCenturies(text) {
+  text = normalizeOrdinalSpacing(text);
+
+  return text.replace(
+    writtenCenturyRegex,
+    (match, fuzzy, word, era, offset, fullText) => {
+
+      if (isInsideConvertedText(fullText, offset)) return match;
+      if (match.includes("H.E.")) return match;
+
+      const num = parseWrittenOrdinal(word);
+      if (!num) return match;
+
+      const prefix = fuzzy ? fuzzy.trim() + " " : "";
+      const suffix = getOrdinalSuffix(num);
+
+      return `${prefix}${num}${suffix} century${era ? " " + era : ""}`;
+    }
+  );
 }
 
 function processText(text) {
@@ -275,6 +379,9 @@ function processText(text) {
 
     // Processes plural century references
     text = processPluralReferences(text);
+
+    // Processes written century numbers and converts them to numbers for the next step
+    text = processWrittenCenturies(text);
 
     // Processes century number references and converts them to plural century references
     text = processCenturyReferences(text);
@@ -400,8 +507,60 @@ const allTests = [
 
   // Mixed with extra text
   { input: "The mid-15th century CE saw changes", expected: "The mid-11400s H.E. (Holocene Era) [converted from 15th century CE] saw changes" },
-  { input: "Late 3rd century BC events", expected: "Late 9600s H.E. (Holocene Era) [converted from 3rd century BC] events" }
+  { input: "Late 3rd century BC events", expected: "Late 9600s H.E. (Holocene Era) [converted from 3rd century BC] events" },
 
+
+    // --- WRITTEN CENTURY TESTS ---
+    // Basic CE
+    { input: "fifteenth century CE", expected: "11400s H.E. (Holocene Era) [converted from 15th century CE]" },
+    { input: "second century AD", expected: "10100s H.E. (Holocene Era) [converted from 2nd century AD]" },
+    { input: "first century", expected: "10000s H.E. (Holocene Era) [converted from 1st century]" },
+
+    // Basic BCE
+    { input: "fifth century BCE", expected: "9400s H.E. (Holocene Era) [converted from 5th century BCE]" },
+    { input: "third century BC", expected: "9600s H.E. (Holocene Era) [converted from 3rd century BC]" },
+
+    // Teens
+    { input: "thirteenth century CE", expected: "11200s H.E. (Holocene Era) [converted from 13th century CE]" },
+    { input: "nineteenth century CE", expected: "11800s H.E. (Holocene Era) [converted from 19th century CE]" },
+
+    // Tens
+    { input: "twentieth century CE", expected: "11900s H.E. (Holocene Era) [converted from 20th century CE]" },
+    { input: "thirtieth century CE", expected: "12900s H.E. (Holocene Era) [converted from 30th century CE]" },
+
+    // Hyphenated
+    { input: "twenty-first century CE", expected: "12000s H.E. (Holocene Era) [converted from 21st century CE]" },
+    { input: "thirty-second century CE", expected: "13100s H.E. (Holocene Era) [converted from 32nd century CE]" },
+
+    // Non-hyphen variant (important!)
+    { input: "twenty first century CE", expected: "12000s H.E. (Holocene Era) [converted from 21st century CE]" },
+    { input: "thirty second century CE", expected: "13100s H.E. (Holocene Era) [converted from 32nd century CE]" },
+
+    // High values
+    { input: "ninety-ninth century CE", expected: "19800s H.E. (Holocene Era) [converted from 99th century CE]" },
+    { input: "ninety ninth century CE", expected: "19800s H.E. (Holocene Era) [converted from 99th century CE]" },
+
+
+    { input: "early fifteenth century CE", expected: "early 11400s H.E. (Holocene Era) [converted from 15th century CE]" },
+    { input: "mid-twentieth century CE", expected: "mid-11900s H.E. (Holocene Era) [converted from 20th century CE]" },
+    { input: "late third century BC", expected: "late 9600s H.E. (Holocene Era) [converted from 3rd century BC]" },
+
+    { input: "c. twenty-first century CE", expected: "c. 12000s H.E. (Holocene Era) [converted from 21st century CE]" },
+    { input: "~ twenty first century CE", expected: "~ 12000s H.E. (Holocene Era) [converted from 21st century CE]" },
+    { input: "around fifth century BCE", expected: "around 9400s H.E. (Holocene Era) [converted from 5th century BCE]" },
+
+
+    { input: "The fifteenth century CE saw major changes", expected: "The 11400s H.E. (Holocene Era) [converted from 15th century CE] saw major changes" },
+
+    { input: "In the early twenty-first century CE, technology advanced rapidly",
+        expected: "In the early 12000s H.E. (Holocene Era) [converted from 21st century CE], technology advanced rapidly" },
+
+    { input: "Late third century BC events reshaped the region",
+        expected: "Late 9600s H.E. (Holocene Era) [converted from 3rd century BC] events reshaped the region" },
+
+    { input: "He finished in first place", expected: "He finished in first place" },
+    { input: "She lived for twenty years", expected: "She lived for twenty years" },
+    { input: "This is a second attempt", expected: "This is a second attempt" }
 
 ];
 
