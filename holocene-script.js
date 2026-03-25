@@ -21,6 +21,18 @@ const rangeRegex = new RegExp(
   "gi"
 );
 
+// Century references (e.g., "15th century BCE")
+//const centuryRegex = /\b(\d{1,2})(?:st|nd|rd|th)?\s+century\s*(BC|BCE|AD|CE|BP)?\b/gi;
+
+// Plural references (e.g., "1800s BCE")
+const pluralRegex = new RegExp(
+    `\\b(\\d{1,4})s\\s*(${ERA_PATTERN})?`, 
+    "gi"
+);
+
+
+
+
 
 //-----------HELPER METHODS-----------------
 
@@ -205,6 +217,41 @@ function processUnlabeledYears(text) {
     });
 }
 
+// function convertCenturyAndPlural(text) {
+//     // Century references
+//     // text = text.replace(centuryRegex, (match, centuryNumber, era) => {
+//     //     const convertedEra = era ? "H.E." : "";
+//     //     return `${centuryNumber}th century ${convertedEra}`.trim();
+//     // });
+
+//     // Plural references
+//     text.replace(pluralRegex, (match, number, era) => {
+//         const convertedEra = era ? "H.E." : "";
+//         return `${number}s ${convertedEra}`.trim();
+//     });
+
+//     return text;
+// }
+
+function processPluralReferences(text) {
+    const pluralRegex = new RegExp(`\\b(\\d{1,4})s\\s*(${ERA_PATTERN})?\\b`, "gi");
+
+    return text.replace(pluralRegex, (match, numberStr, eraStr, offset, fullText) => {
+        if (isInsideConvertedText(fullText, offset)) return match;
+        if (match.includes("H.E.")) return match;
+
+        const number = parseInt(numberStr.replace(/,/g, ""), 10);
+        const era = normalizeEra(eraStr || "CE");  // default CE if no era
+
+        let convertedNumber = convertYear(number, era);
+        if (era === "BCE" || era === "BC") {
+            convertedNumber -= 1; // BCE adjustment for broad centuries
+        }
+
+        return `${convertedNumber}s H.E. (Holocene Era) [converted from ${numberStr}s ${eraStr || "CE"}]`;
+    });
+}
+
 function processText(text) {
     const rangePlaceholders = [];
 
@@ -218,6 +265,9 @@ function processText(text) {
     //Process singles + unlabeled
     text = processSingleYears(text);
     text = processUnlabeledYears(text);
+
+    // Process plural century references
+    text = processPluralReferences(text);
 
     //Restore ranges and process them
     text = text.replace(/__RANGE_(\d+)__/g, (_, i) => {
@@ -308,7 +358,15 @@ const allTests = [
   { input: "10000 BCE", expected: "1 H.E. (Holocene Era) [converted from 10000 BCE]" },
   { input: "10001 BCE", expected: "0 H.E. (Holocene Era) [converted from 10001 BCE]" },
   { input: "10002 BCE", expected: "-1 H.E. (Holocene Era) [converted from 10002 BCE]" },
-  { input: "10003 BCE", expected: "-2 H.E. (Holocene Era) [converted from 10003 BCE]" }
+  { input: "10003 BCE", expected: "-2 H.E. (Holocene Era) [converted from 10003 BCE]" },
+
+  // --- PLURAL CENTURY TESTS ---
+  { input: "1500s CE", expected: "11500s H.E. (Holocene Era) [converted from 1500s CE]" },
+  { input: "500s BCE", expected: "9500s H.E. (Holocene Era) [converted from 500s BCE]" },
+  { input: "100s BCE", expected: "9900s H.E. (Holocene Era) [converted from 100s BCE]" },
+  { input: "200s", expected: "10200s H.E. (Holocene Era) [converted from 200s CE]" },
+  { input: "300s BC", expected: "9700s H.E. (Holocene Era) [converted from 300s BC]" },
+  { input: "1800s AD", expected: "11800s H.E. (Holocene Era) [converted from 1800s AD]" }
 
 ];
 
