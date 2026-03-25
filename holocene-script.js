@@ -1,4 +1,3 @@
-//const yearRegex = /\b(?:(AD|A\.D\.)\s*)?(\d{1,6}|\d{1,3}(?:,\d{3})*)(\s*(BC|BCE|CE|AD|BP|B\.C\.|B\.C\.E\.|C\.E\.|A\.D\.|B\.P\.))\b|\b(\d{3,4})\b/g;
 const ERA_PATTERN = "BC|BCE|CE|AD|BP|B\\.C\\.|B\\.C\\.E\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.";
 const yearRegex = new RegExp(
   `\\b(?:(AD|A\\.D\\.)\\s*)?` +
@@ -38,48 +37,6 @@ function normalizeEra(era) {
 
     return era;
 }
-
-/**
- * Determine the era for a number in a range or a single year.
- * Rules:
- * - If there’s a suffix immediately after the number, use it.
- * - For first number in range:
- *    - If the second number is BCE, force first to BCE.
- *    - Otherwise, use prefix or default CE.
- * - For second number, fallback to suffix, prefix, or CE.
- */
-// function getEraForNumber(numberStr, position, prefixEra, suffixEra, fullMatch) {
-//     // Check for suffix immediately after this number
-//     const suffixRegex = new RegExp(`\\b${numberStr}\\b\\s*(BC|BCE|CE|AD|BP|B\\.C\\.|B\\.C\\.E\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.)`, 'i');
-//     const suffixMatch = fullMatch.match(suffixRegex);
-
-//     if (suffixMatch) {
-//         return normalizeEra(suffixMatch[1]);
-//     }
-
-//     // Determine era of the other end of the range
-//     const otherEndMatch = fullMatch.match(/(\d{1,6})\s*(BC|BCE|CE|AD|BP|B\.C\.|B\.C\.E\.|C\.E\.|A\.D\.|B\.P\.)$/i);
-//     const otherEra = otherEndMatch ? normalizeEra(otherEndMatch[2]) : null;
-
-//     let era;
-
-//     if (position === "start") {
-//         // If second number is BCE/BC, first number must also be BCE/BC
-//         if (otherEra === "BCE" || otherEra === "BC") {
-//             era = "BCE";
-//         } else {
-//             era = prefixEra || "CE";
-//         }
-//     } else if (position === "end") {
-//         era = suffixEra || prefixEra || "CE";
-//     } else if (position === "single") {
-//         era = suffixEra || prefixEra || "CE";
-//     } else {
-//         era = "CE";
-//     }
-
-//     return normalizeEra(era);
-// }
 
 function convertFromBPToBC(year){
     return year - 1950 + 1;
@@ -135,34 +92,6 @@ function isInsideConvertedText(text, offset) {
 
     return lastOpen > lastClose;
 }
-
-// function isInsideRange(text, offset) {
-//     const before = text.slice(0, offset);
-//     const lastDash = Math.max(
-//         before.lastIndexOf("–"),
-//         before.lastIndexOf("-"),
-//         before.lastIndexOf("to")
-//     );
-
-//     const lastBreak = Math.max(
-//         before.lastIndexOf("."),
-//         before.lastIndexOf(","),
-//         before.lastIndexOf("\n")
-//     );
-
-//     return lastDash > lastBreak;
-// }
-
-// function isInsideRange(text, offset) {
-//     const before = text.slice(0, offset);
-//     const after = text.slice(offset);
-
-//     const window = before.slice(-20) + after.slice(0, 20);
-
-//     const rangePattern = /\d{1,6}(?:,\d{3})?\s*(?:-|–|to)\s*\d{1,6}(?:,\d{3})?/;
-
-//     return rangePattern.test(window);
-// }
 
 //--------------------------------------------------------------
 
@@ -313,7 +242,7 @@ walkDOMAndProcess(document.body);
 
 
 
-
+//--------------------------TESTING----------------------
 
 const allTests = [
 
@@ -367,3 +296,5 @@ allTests.forEach(({ input, expected }) => {
     console.log(`${pass} ${input}`);
   }
 });
+
+//-------------------------------------------------------
