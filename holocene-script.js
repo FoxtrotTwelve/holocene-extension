@@ -178,7 +178,6 @@ function processSingleYears(text) {
 
         if (!yearStr) return match;
 
-        //if (isInsideRange(string, offset)) return match;
         if (isInsideConvertedText(string, offset)) return match;
         if (match.includes("H.E.")) return match;
 
@@ -300,7 +299,16 @@ const allTests = [
   { input: "c. 500 BCE", expected: "c. 9501 H.E. (Holocene Era) [converted from 500 BCE]" },
   { input: "~1200 AD", expected: "~11200 H.E. (Holocene Era) [converted from 1200 CE]" },
   { input: "around 300 BC", expected: "around 9701 H.E. (Holocene Era) [converted from 300 BCE]" },
-  { input: "c. 1000–1500", expected: "c. 11000–11500 H.E. (Holocene Era) [converted from 1000 CE–1500 CE]" }
+  { input: "c. 1000–1500", expected: "c. 11000–11500 H.E. (Holocene Era) [converted from 1000 CE–1500 CE]" },
+  { input: "c. 1200", expected: "c. 11200 H.E. (Holocene Era) [converted from 1200]" },
+  { input: "~ 300", expected: "~ 10300 H.E. (Holocene Era) [converted from 300]" },
+  { input: "around 1000", expected: "around 11000 H.E. (Holocene Era) [converted from 1000]" },
+
+  // --- ZERO AND NEGATIVE ---
+  { input: "10000 BCE", expected: "1 H.E. (Holocene Era) [converted from 10000 BCE]" },
+  { input: "10001 BCE", expected: "0 H.E. (Holocene Era) [converted from 10001 BCE]" },
+  { input: "10002 BCE", expected: "-1 H.E. (Holocene Era) [converted from 10002 BCE]" },
+  { input: "10003 BCE", expected: "-2 H.E. (Holocene Era) [converted from 10003 BCE]" }
 
 ];
 
