@@ -46,7 +46,8 @@ const rangeRegex = new RegExp(
   `\\s*(?:-|–|to)\\s*` +
   `(\\d{1,3}(?:,\\d{3})*|\\d{1,6})` +    // group 5: end year
   `(?:\\s*(${ERA_PATTERN}))?` +           // group 6: end era (optional)
-  `\\b`,
+  //`\\b`,
+  `(?=\\s|$|[.,;:])`,
   "gi"
 );
 
@@ -517,6 +518,7 @@ const allTests = [
   { input: "1948", expected: "11948 H.E. (Holocene Era) [converted from 1948 CE]" },
   { input: "44BC", expected: "9957 H.E. (Holocene Era) [converted from 44 BCE]" },
   { input: "1865 A.D.", expected: "11865 H.E. (Holocene Era) [converted from 1865 CE]" },
+  { input: "1994C.E.", expected: "11994 H.E. (Holocene Era) [converted from 1994 CE]" },
   
   
   // --- RANGE TESTS ---
@@ -529,11 +531,18 @@ const allTests = [
   { input: "1,500–2,000 CE", expected: "11500–12000 H.E. (Holocene Era) [converted from 1500 CE–2000 CE]" },
   { input: "1200 to 1400 CE", expected: "11200–11400 H.E. (Holocene Era) [converted from 1200 CE–1400 CE]" },
   { input: "1000 BCE to 500 BCE", expected: "9001–9501 H.E. (Holocene Era) [converted from 1000 BCE–500 BCE]" },
+  { input: "1000BCE–500BCE", expected: "9001–9501 H.E. (Holocene Era) [converted from 1000 BCE–500 BCE]" },
+  { input: "1000–400BCE", expected: "9001–9601 H.E. (Holocene Era) [converted from 1000 BCE–400 BCE]" },
+  { input: "1000B.C.E.–500B.C.E.", expected: "9001–9501 H.E. (Holocene Era) [converted from 1000 BCE–500 BCE]" },
+  { input: "1000–400B.C.E.", expected: "9001–9601 H.E. (Holocene Era) [converted from 1000 BCE–400 BCE]" },
 
   // --- BP SINGLE YEARS ---
   { input: "300 BP", expected: "11650 H.E. (Holocene Era) [converted from 300 BP]" },
   { input: "1950 BP", expected: "10000 H.E. (Holocene Era) [converted from 1950 BP]" },
   { input: "1951 BP", expected: "9999 H.E. (Holocene Era) [converted from 1951 BP]" },
+  { input: "50BP", expected: "11900 H.E. (Holocene Era) [converted from 50 BP]" },
+  { input: "40B.P.", expected: "11910 H.E. (Holocene Era) [converted from 40 BP]" },
+  { input: "30 B.P.", expected: "11920 H.E. (Holocene Era) [converted from 30 BP]" },
 
   // --- UNLABELED RANGES ---
   { input: "1000–1500", expected: "11000–11500 H.E. (Holocene Era) [converted from 1000 CE–1500 CE]" },
