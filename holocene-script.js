@@ -366,7 +366,10 @@ const allTests = [
   { input: "100s BCE", expected: "9900s H.E. (Holocene Era) [converted from 100s BCE]" },
   { input: "200s", expected: "10200s H.E. (Holocene Era) [converted from 200s CE]" },
   { input: "300s BC", expected: "9700s H.E. (Holocene Era) [converted from 300s BC]" },
-  { input: "1800s AD", expected: "11800s H.E. (Holocene Era) [converted from 1800s AD]" }
+  { input: "1800s AD", expected: "11800s H.E. (Holocene Era) [converted from 1800s AD]" },
+  { input: "early 500s BCE", expected: "early 9500s H.E. (Holocene Era) [converted from 500s BCE]" },
+  { input: "mid-1800s CE", expected: "mid-11800s H.E. (Holocene Era) [converted from 1800s CE]" },
+  { input: "late 1400s CE", expected: "late 11400s H.E. (Holocene Era) [converted from 1400s CE]" }
 
 ];
 
