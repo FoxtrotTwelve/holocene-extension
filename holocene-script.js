@@ -104,14 +104,6 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     return true;
 }
 
-// function isInsideConvertedText(text, offset) {
-//     const before = text.slice(0, offset);
-//     const lastOpen = before.lastIndexOf("[converted from");
-//     const lastClose = before.lastIndexOf("]");
-
-//     return lastOpen > lastClose;
-// }
-
 function isInsideConvertedText(text, offset) {
     if (!text || typeof text !== "string") return false;
 
@@ -405,7 +397,7 @@ const allTests = [
   { input: "12th century CE", expected: "11100s H.E. (Holocene Era) [converted from 12th century CE]" },
 
   // Mixed with extra text
-  { input: "The mid-15th century CE saw changes", expected: "The 11400s H.E. (Holocene Era) [converted from 15th century CE] saw changes" },
+  { input: "The mid-15th century CE saw changes", expected: "The mid-11400s H.E. (Holocene Era) [converted from 15th century CE] saw changes" },
   { input: "Late 3rd century BC events", expected: "Late 9600s H.E. (Holocene Era) [converted from 3rd century BC] events" }
 
 
