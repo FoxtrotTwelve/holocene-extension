@@ -192,6 +192,35 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     return true;
 }
 
+function isLikelyYearRange(y1, y2, prefixEra, era1, era2, text, offset, matchLength, fuzzyPrefix) {
+    const hasEra = prefixEra || era1 || era2;
+    if (hasEra) return true; // marked era → definitely a date
+
+    // short numbers <100 → not a date
+    if (y1 < 100 && y2 < 100) return false;
+
+    // descending without era → ambiguous → don't convert
+    if (y1 > y2) return false;
+
+    // fuzzy modifiers like "c.", "ca.", "circa" indicate a date
+    if (fuzzyPrefix) {
+        const lower = fuzzyPrefix.toLowerCase();
+        if (["c.", "ca.", "circa"].some(f => lower.includes(f))) return true;
+    }
+
+    // look at surrounding words (keep your existing context logic)
+    const before = text.slice(Math.max(0, offset - 20), offset).toLowerCase();
+    const after = text.slice(offset + matchLength, offset + matchLength + 40).toLowerCase();
+
+    const dateIndicators = [
+        "year","years","during","ad","ce","bce","bc","bp",
+        "a.d.","c.e.","b.c.e","b.c.","b.p.","century","centuries",
+        "since","c.","ca.","circa","early","mid-","late"
+    ];
+
+    return dateIndicators.some(indicator => before.includes(indicator) || after.includes(indicator));
+}
+
 function isInsideConvertedText(text, offset) {
     if (!text || typeof text !== "string") return false;
 
@@ -263,50 +292,55 @@ function parseWrittenHundreds(word) {
 
 function processRanges(text) {
     return text.replace(rangeRegex, (match, fuzzyPrefix, prefixEra, y1, era1, y2, era2, offset, string) => {
+        const before = string[offset - 1];
+        const after = string[offset + match.length];
 
+        if (before === "-" || before === "–" || after === "-" || after === "–") return match;
         if (isInsideConvertedText(string, offset)) return match;
         if (match.includes("H.E.")) return match;
-
         if (!y1 || !y2) return match;
 
-        const formattedPrefix = formatPrefix(fuzzyPrefix);
         const year1 = parseYear(y1);
         const year2 = parseYear(y2);
 
-        if (!era1 && !era2 && !prefixEra && year1 > year2) {
-            return match;
+        if (!isLikelyYearRange(year1, year2, prefixEra, era1, era2, string, offset, match.length, fuzzyPrefix)) {
+            return match; // leave as-is if not likely a year
         }
+
+        const hasEra = prefixEra || era1 || era2;
+
+        // --- EARLY EXIT CHECKS ---
+        // 1. Short numeric ranges (<100) without era → do not convert
+        if (!hasEra && year1 < 100 && year2 < 100) return match;
+
+        // 2. Ambiguous descending range without era → do not convert
+        if (!hasEra && year1 > year2) return match;
+
+        // --- Proceed with conversion ---
+        const formattedPrefix = formatPrefix(fuzzyPrefix);
 
         const normPrefix = normalizeEra(prefixEra);
         const normEra1 = normalizeEra(era1);
         const normEra2 = normalizeEra(era2);
 
-        if (!normEra1 && !normEra2 && !normPrefix && year1 > year2) {
-            return match;
-        }
-
         let finalEra1, finalEra2;
 
-        // --- Handle BP ranges first
+        // Handle BP ranges first
         if (normEra1 === "BP" || normEra2 === "BP") {
             finalEra1 = "BP";
             finalEra2 = "BP";
         } 
-        // --- Then handle BCE ranges
+        // Then handle BCE ranges
         else if (normEra2 === "BCE") {
             finalEra1 = "BCE";
             finalEra2 = "BCE";
         } 
-        // --- Fully unlabeled range
+        // Fully unlabeled range (ascending order)
         else if (!normEra1 && !normEra2 && !normPrefix) {
-            if (year1 <= year2) {
-                finalEra1 = "CE";
-                finalEra2 = "CE";
-            } else {
-                return match; // ambiguous → do not convert
-            }
+            finalEra1 = "CE";
+            finalEra2 = "CE";
         } 
-        // --- Mixed cases
+        // Mixed cases
         else {
             finalEra2 = normEra2 || normEra1 || normPrefix || "CE";
             finalEra1 = normEra1 || normPrefix || finalEra2;
@@ -321,6 +355,13 @@ function processRanges(text) {
 
 function processSingleYears(text) {
     return text.replace(yearRegex, (match, fuzzyPrefix, prefixEra, yearStr, suffixEra, offset, string) => {
+        const before = string[offset - 1];
+        const after = string[offset + match.length];
+
+        if (before === "-" || before === "–" || after === "-" || after === "–") {
+            return match;
+        }
+
 
         if (!yearStr) return match;
 
@@ -447,8 +488,15 @@ function processWrittenHundreds(text) {
 }
 
 function processText(text) {
+    const chainPlaceholders = [];
+    //Protects numeric chains
+    text = text.replace(/\b\d+(?:[-–]\d+){2,}\b/g, (match) => {
+        const id = chainPlaceholders.length;
+        chainPlaceholders.push(match);
+        return `__CHAIN_${id}__`;
+    });
+    
     const rangePlaceholders = [];
-
     //Extracts ranges and replace with placeholders
     text = text.replace(rangeRegex, (match) => {
         const id = rangePlaceholders.length;
@@ -475,6 +523,11 @@ function processText(text) {
     //Restores ranges and process them
     text = text.replace(/__RANGE_(\d+)__/g, (_, i) => {
         return processRanges(rangePlaceholders[i]);
+    });
+
+    //Restores chains
+    text = text.replace(/__CHAIN_(\d+)__/g, (_, i) => {
+        return chainPlaceholders[i];
     });
 
     return text;
@@ -545,9 +598,25 @@ const allTests = [
   { input: "30 B.P.", expected: "11920 H.E. (Holocene Era) [converted from 30 BP]" },
 
   // --- UNLABELED RANGES ---
-  { input: "1000–1500", expected: "11000–11500 H.E. (Holocene Era) [converted from 1000 CE–1500 CE]" },
+  { input: "1000–1500", expected: "1000–1500" },
   { input: "1500–1000", expected: "1500–1000" },
   { input: "1500–500", expected: "1500–500" },
+
+  // --- NON-DATES ---
+  { input: "240-343-1340", expected: "240-343-1340" }, //phone number example
+  { input: "1103-2000-3200-4382", expected: "1103-2000-3200-4382" }, //credit card example
+  { input: "991-91-7234", expected: "991-91-7234" }, //social security example
+  { input: "01/02/1980", expected: "01/02/11980 H.E. (Holocene Era) [converted from 1980 CE]" }, //birthday/exact date example
+  { input: "12:15", expected: "12:15" }, //time
+  { input: "14:15PM", expected: "14:15PM" }, //time
+  { input: "2:15 AM", expected: "2:15 AM" }, //time
+  { input: "about 30-50 wild boars", expected: "about 30-50 wild boars" }, //not a range
+  { input: "I need 900-1200 centimeters of rope.", expected: "I need 900-1200 centimeters of rope." }, //not a range
+
+  // --- COMPLEX SENTANCES / DOUBLE DATES ---
+  { input: "From 500 BCE to 400 BCE, and later 1500 CE–1600 CE", expected: "From 9501–9601 H.E. (Holocene Era) [converted from 500 BCE–400 BCE], and later 11500–11600 H.E. (Holocene Era) [converted from 1500 CE–1600 CE]" },
+  { input: "fifteenth century BCE and 1400–1500 CE", expected: "8400s H.E. (Holocene Era) [converted from 15th century BCE] and 11400–11500 H.E. (Holocene Era) [converted from 1400 CE–1500 CE]" },
+  { input: "In 500 BCE, something happened. Between 1000–1200 CE,...", expected: "In 9501 H.E. (Holocene Era) [converted from 500 BCE], something happened. Between 11000–11200 H.E. (Holocene Era) [converted from 1000 CE–1200 CE],..." },
 
   // --- EDGE CASE ---
   { input: "0 CE", expected: "10000 H.E. (Holocene Era) [converted from 0 CE]" },
