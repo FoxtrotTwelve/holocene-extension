@@ -106,7 +106,25 @@ const writtenHundredsRegex = new RegExp(
 //const decadeRegex = /\b(\d{3,4})s?(?:[-–](\d{2,4})s?)?\b/g;
 //const decadeRegex = /\b(\d{4})s?(?:\s*[-–]\s*(\d{2,4})s?)?\b/g;
 //const decadeRegex = /\b(\d{4})s(?:\s*[-–]\s*(\d{2,4})s?)?\b/g;
-const decadeRegex = /\b(\d{2}[1-9]0)s(?:\s*[-–]\s*(\d{2,3}[0-9]?0)s?)?\b/g;
+//const decadeRegex = /\b(\d{2}[1-9]0)s(?:\s*[-–]\s*(\d{2,3}[0-9]?0)s?)?\b/g;
+//const decadeRegex = /\b(\d{4}0?s?)\s*(?:[-–]\s*(\d{2,4}s?))?\b/g;
+//const decadeRegex = /\b(\d{2}[1-9]0s?)\s*(?:[-–]\s*(\d{2,4}s?))?\b/g;
+//const decadeRegex = /\b(\d{2}[1-9]0s?)\s*(?:[-–]\s*(\d{2,4}s?|\d{2}))?\b/g;
+//const decadeRegex = /\b(\d{2}[1-9]0s?)\s*(?:[-–]\s*(\d{2,4}s?))?\b/g;
+
+const decadeRegex = /\b(\d{2}[1-9]0s?)\s*(?:[-–]\s*(\d{2,4}s?|\d{2}))?\b/g; //(This doesn't break any previous test!)
+
+//const decadeRegex = /\b(\d{2}[0-9]0s?)\s*(?:[-–]\s*(\d{2,4}s?))?\b/g;
+//const decadeRegex = /\b(\d{2,4}s?)(?:[–-](\d{2,4}s?))?\b/g;
+
+
+
+
+//const abbreviatedDecadeRegex = /\b(\d{4}s?)[-–](\d{2}s?)\b/g;
+const abbreviatedDecadeRegex = /\b(\d{4}s?)\s*[-–]\s*(\d{2}s?)\b/g;
+
+
+
 
 
 
@@ -553,58 +571,181 @@ function protectDecades(text, decadePlaceholders) {
         return `__DECADE_${id}__`;
     });
 }
+function protectDecades(text, decadePlaceholders){
+    return text.replace(decadeRegex, (match, first, second, offset, string) => {
+
+        // 🚨 NEW: detect era context
+        const after = string.slice(offset, offset + match.length + 10);
+        if (new RegExp(`\\b(BP|B\\.P\\.)\\b`, "i").test(after)) {
+            return match; // ❌ DO NOT protect → let range system handle it
+        }
+
+        const id = decadePlaceholders.length;
+        decadePlaceholders.push(match);
+        return `__DECADE_${id}__`;
+    });
+}
+
+// function processDecadeRanges(text) {
+//     console.log("Processed in DECADES");
+//     return text.replace(decadeRegex, (match, first, second, offset, string) => {
+//         if (isInsideConvertedText(string, offset)) return match;
+//         if (match.includes("H.E.")) return match;
+
+//         const eraMatch = match.match(new RegExp(`(${ERA_PATTERN})`, "i"));
+//         const era = eraMatch ? normalizeEra(eraMatch[0]) : "CE";
+
+//         const hasSFirst = /s$/.test(first);
+//         const firstYear = parseInt(first.replace(/s$/, ""), 10);
+//         const convertedFirst = convertYear(firstYear, era);
+//         let result = convertedFirst + (hasSFirst ? "s" : "");
+
+//         if (second) {
+//             let secondDisplay = second; // what will appear in the text
+//             let secondYear = parseInt(second.replace(/s$/, ""), 10);
+//             const hasSSecond = /s$/.test(second);
+
+//             // Handle abbreviated 2-digit second decade like "90s"
+//             if (second.length === 2) {
+//                 const century = Math.floor(firstYear / 100);
+//                 secondYear = parseInt(century.toString() + second, 10);
+//             }
+
+//             const convertedSecond = convertYear(secondYear, era);
+            
+//             // Keep 's' if it was in the original second decade
+//             secondDisplay = hasSSecond ? convertedSecond + "s" : convertedSecond;
+
+//             result += "–" + secondDisplay;
+//         }
+
+//         return `${result} H.E. (Holocene Era) [converted from ${match} ${era}]`;
+//     });
+// }
+
+// function processDecadeRanges(match) {
+//     const parts = match.split(/[-–]/);
+//     const first = parts[0].trim();
+//     const second = parts[1] ? parts[1].trim() : null;
+
+//     const firstHasS = /s$/.test(first);
+//     const firstYear = parseInt(first.replace(/s$/, ""), 10);
+//     const convertedFirst = convertYear(firstYear, "CE") + (firstHasS ? "s" : "");
+
+//     let result = convertedFirst;
+
+//     if (second) {
+//         let secondDisplay = second; // leave abbreviated as-is
+//         // Only expand 2-digit second if full numeric conversion needed
+//         if (!second.includes("s") && second.length === 2) {
+//             secondDisplay = second; // keep "90" instead of "10090"
+//         } else if (/s$/.test(second)) {
+//             secondDisplay = second; // keep "90s" as-is
+//         } else {
+//             const secondYear = parseInt(second.replace(/s$/, ""), 10);
+//             secondDisplay = convertYear(secondYear, "CE");
+//         }
+//         result += "–" + secondDisplay;
+//     }
+
+//     return `${result} H.E. (Holocene Era) [converted from ${match} CE]`;
+// }
+
 function processDecadeRanges(text) {
     console.log("Processed in DECADES");
-    return text.replace(decadeRegex, (match, first, second, fuzzyPrefix, prefixEra, yearStr, suffixEra, offset, string) => {
+    return text.replace(decadeRegex, (match, first, second, offset, string) => {
         if (isInsideConvertedText(string, offset)) return match;
         if (match.includes("H.E.")) return match;
 
-        // Detect if the original match included an 's'
-        const hasS = /\ds\b/.test(match);
-
-        // 🔹 Extract era if present
         const eraMatch = match.match(new RegExp(`(${ERA_PATTERN})`, "i"));
-        // 🔹 Store original era for display
-        const originalEra = eraMatch ? eraMatch[0] : "";           // 🔹 new line
-        // 🔹 Use normalized era only for conversion
-        const era = eraMatch ? normalizeEra(eraMatch[0]) : "CE";   // modified line
+        const era = eraMatch ? normalizeEra(eraMatch[0]) : "CE";
 
-        yearStr = first.replace(/s$/, '');
+        // First decade
+        const hasSFirst = /s$/.test(first);
+        const firstYear = parseInt(first.replace(/s$/, ""), 10);
 
-        // Convert first year
-        const year1 = parseInt(yearStr, 10);
-        
         // 🚫 Skip centuries like 1800s, 1500s, etc.
-        if (year1 % 100 === 0) {
+        if (firstYear % 100 === 0) {
             return match;
         }
 
-        const converted1 = convertYear(year1, era);
+        const convertedFirst = convertYear(firstYear, era);
+        let result = convertedFirst + (hasSFirst ? "s" : "");
 
-        let result = `${converted1}${hasS ? "s" : ""}`;
-
-        // If there’s a range (e.g., "1980s–1990s")
+        // Second decade (if exists)
         if (second) {
-            let year2Str = second.replace(/s$/, '');
-            let year2;
-            if (year2Str.length === 2) {
-                // Abbreviated decade: combine century digits from first year
-                const century = Math.floor(year1 / 100);
-                year2 = parseInt(century.toString() + year2Str, 10);
+            const hasSSecond = /s$/.test(second);
+            let strippedSecond = second.replace(/s$/, "");
+            let secondYear;
+
+            if (strippedSecond.length === 2) {
+                const century = Math.floor(firstYear / 100);
+                secondYear = parseInt(century.toString() + strippedSecond, 10);
             } else {
-                year2 = parseInt(year2Str, 10);
+                secondYear = parseInt(strippedSecond, 10);
             }
 
-            if (year2 % 100 === 0) return match;
+            const convertedSecond = convertYear(secondYear, era);
 
-            // Round **end of decade** to decade start
-            year2 = Math.floor(year2 / 10) * 10;
-            const converted2 = convertYear(year2, era);
+            // Keep original style: 's' if present, abbreviated if originally 2 digits
+            let secondDisplay;
+            if (strippedSecond.length === 2 && !hasSSecond) {
+                secondDisplay = strippedSecond; // keep '90' as-is
+            } else {
+                secondDisplay = hasSSecond ? convertedSecond + "s" : convertedSecond;
+            }
 
-            result = `${converted1}${hasS ? "s" : ""}–${converted2}${hasS ? "s" : ""}`;
+            result += "–" + secondDisplay;
         }
 
-        //return `${result} H.E. (Holocene Era) [converted from ${match}]${originalEra ? " " + originalEra : ""}`;
+        return `${result} H.E. (Holocene Era) [converted from ${match} ${era}]`;
+    });
+}
+
+
+// function protectAbbreviatedDecades(text, abbreviatedDecadePlaceholders) {
+//     return text.replace(abbreviatedDecadeRegex, (match) => {
+//         const id = abbreviatedDecadePlaceholders.length;
+//         abbreviatedDecadePlaceholders.push(match);
+//         return `__ABBR_DECADE_${id}__`;
+//     });
+// }
+function protectAbbreviatedDecades(text, abbreviatedDecadePlaceholders) {
+    return text.replace(abbreviatedDecadeRegex, (match, first, second, offset, string) => {
+
+        // 🚨 NEW: detect era context
+        const after = string.slice(offset, offset + match.length + 10);
+        if (new RegExp(`\\b(${ERA_PATTERN})\\b`, "i").test(after)) {
+            return match; // ❌ DO NOT protect → let range system handle it
+        }
+
+        const id = abbreviatedDecadePlaceholders.length;
+        abbreviatedDecadePlaceholders.push(match);
+        return `__ABBR_DECADE_${id}__`;
+    });
+}
+function processDecadeAbbreviatedRanges(text) {
+    console.log("Processed in ABBREVIATED DECADES");
+
+    return text.replace(abbreviatedDecadeRegex, (match, first, second, offset, string) => {
+        if (isInsideConvertedText(string, offset)) return match;
+        if (match.includes("H.E.")) return match;
+
+        const eraMatch = match.match(new RegExp(`(${ERA_PATTERN})`, "i"));
+        const era = eraMatch ? normalizeEra(eraMatch[0]) : "CE";
+
+        const hasSFirst = /s$/.test(first);
+        const firstYear = parseInt(first.replace(/s$/, ""), 10);
+
+        const convertedFirst = convertYear(firstYear, era);
+        let result = convertedFirst + (hasSFirst ? "s" : "");
+
+        const hasSSecond = /s$/.test(second);
+
+        // 🚨 KEY RULE: DO NOT convert abbreviated second
+        const separator = match.includes("–") ? "–" : "-";
+        result += separator + second;
+
         return `${result} H.E. (Holocene Era) [converted from ${match} ${era}]`;
     });
 }
@@ -612,12 +753,16 @@ function processDecadeRanges(text) {
 function processText(text) {
     const chainPlaceholders = [];
     const decadePlaceholders = [];
+    const abbreviatedDecadePlaceholders = [];
     //Protects numeric chains
     text = text.replace(/\b\d+(?:[-–]\d+){2,}\b/g, (match) => {
         const id = chainPlaceholders.length;
         chainPlaceholders.push(match);
         return `__CHAIN_${id}__`;
     });
+
+    // Protect abbreviated decades
+    text = protectAbbreviatedDecades(text, abbreviatedDecadePlaceholders);
     
     const rangePlaceholders = [];
     //Extracts ranges and replace with placeholders
@@ -689,6 +834,11 @@ function processText(text) {
     //Restores chains
     text = text.replace(/__CHAIN_(\d+)__/g, (_, i) => {
         return chainPlaceholders[i];
+    });
+
+    // Process abbreviated decades
+    text = text.replace(/__ABBR_DECADE_(\d+)__/g, (_, i) => {
+        return processDecadeAbbreviatedRanges(abbreviatedDecadePlaceholders[i]);
     });
 
     // Processes decade ranges like "1980s–1990s"
