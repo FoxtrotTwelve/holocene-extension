@@ -1,6 +1,5 @@
-const ERA_PATTERN = "BCE|BC|CE|AD|BP|B\\.C\\.E\\.|B\\.C\\.|C\\.E\\.|A\\.D\\.|B\\.P\\.";
+const ERA_PATTERN = "BCE|BC|CE|AD|BP|A\\.D\\.|B\\.C\\.E\\.|B\\.C\\.|C\\.E\\.|B\\.P\\.";
 const FUZZY_MODIFIER = "(?:early|mid-|late|c\\.|ca\\.|circa|~|around)\\s*";
-const convertedPlaceholders = [];
 const ORDINAL_ONES = {
   first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
   sixth: 6, seventh: 7, eighth: 8, ninth: 9
@@ -28,6 +27,9 @@ const NUMBER_WORDS = {
   twenty: 20, thirty: 30, forty: 40, fifty: 50,
   sixty: 60, seventy: 70, eighty: 80, ninety: 90
 };
+
+const masterConvertedRegex = /\b(?:early|mid-|late|c\.|ca\.|circa|~|around)?\s*\d+(?:s)?(?:–\d+(?:s)?)?\s+H\.E\.[^\[]*\[converted from [^\]]+\]/gi;
+        ///\(Holocene Era\) \[converted from .*?\]/;
 
 const yearRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?` +      // group 1: fuzzy prefix (optional)
@@ -102,27 +104,30 @@ const writtenHundredsRegex = new RegExp(
 
 //const decadeRegex = /\b(\d{3,4})s?(?:\s*(?:–|-|to)\s*(\d{2,4})s?)?\b/g;
 //const decadeRegex = /\b(\d{3,4})s?(?:[-–](\d{2,4})s?)?\b/g;
-const decadeRegex = /\b(\d{4})s?(?:\s*[-–]\s*(\d{2,4})s?)?\b/g;
+//const decadeRegex = /\b(\d{4})s?(?:\s*[-–]\s*(\d{2,4})s?)?\b/g;
+//const decadeRegex = /\b(\d{4})s(?:\s*[-–]\s*(\d{2,4})s?)?\b/g;
+const decadeRegex = /\b(\d{2}[1-9]0)s(?:\s*[-–]\s*(\d{2,3}[0-9]?0)s?)?\b/g;
 
 
 
 //-----------HELPER METHODS-----------------
 
-function protectConverted(text) {
-    return text.replace(
-        /\b(?:early|mid-|late|c\.|ca\.|circa|~|around)?\s*\d+(?:s)?(?:–\d+(?:s)?)?\s+H\.E\.[^\[]*\[converted from [^\]]+\]/gi,
-        (match) => {
-            const id = convertedPlaceholders.length;
-            convertedPlaceholders.push(match);
-            return `__CONVERTED_${id}__`;
-        }
-    );
-}
-function restoreConverted(text) {
-    return text.replace(/__CONVERTED_(\d+)__/g, (_, i) => {
-        return convertedPlaceholders[i];
-    });
-}
+// const convertedPlaceholders = [];
+// function protectConverted(text) {
+//     return text.replace(
+//         /\b(?:early|mid-|late|c\.|ca\.|circa|~|around)?\s*\d+(?:s)?(?:–\d+(?:s)?)?\s+H\.E\.[^\[]*\[converted from [^\]]+\]/gi,
+//         (match) => {
+//             const id = convertedPlaceholders.length;
+//             convertedPlaceholders.push(match);
+//             return `__CONVERTED_${id}__`;
+//         }
+//     );
+// }
+// function restoreConverted(text) {
+//     return text.replace(/__CONVERTED_(\d+)__/g, (_, i) => {
+//         return convertedPlaceholders[i];
+//     });
+// }
 
 function parseYear(yearStr) {
     return parseInt(yearStr.replace(/,/g, ""), 10);
@@ -329,7 +334,7 @@ function parseWrittenHundreds(word) {
 //----------------CORE TEXT PROCESSING-----------------
 
 function processRanges(text) {
-    console.log("Processed in RANGES");
+    //console.log("Processed in RANGES");
     return text.replace(rangeRegex, (match, fuzzyPrefix, prefixEra, y1, era1, y2, era2, offset, string) => {
         const before = string[offset - 1];
         const after = string[offset + match.length];
@@ -393,7 +398,7 @@ function processRanges(text) {
 }
 
 function processSingleYears(text) {
-    console.log("Processed in SINGLE YEARS");
+    //console.log("Processed in SINGLE YEARS");
     return text.replace(yearRegex, (match, fuzzyPrefix, prefixEra, yearStr, suffixEra, offset, string) => {
         const before = string[offset - 1];
         const after = string[offset + match.length];
@@ -422,7 +427,7 @@ function processSingleYears(text) {
 }
 
 function processUnlabeledYears(text) {
-    console.log("Processed in UNLABELED YEARS");
+    //console.log("Processed in UNLABELED YEARS");
     return text.replace(/\b(\d{3,4})\b/g, (match, p1, offset, string) => {
 
         if (isInsideConvertedText(string, offset)) return match;
@@ -443,7 +448,7 @@ function processUnlabeledYears(text) {
 function processPluralReferences(text) {
     //const pluralRegex = new RegExp(`\\b(\\d{1,4})s\\s*(${ERA_PATTERN})?\\b`, "gi");
     //const pluralRegex = new RegExp(`\\b(\\d{1,4})s(?!\\s*H\\.E\\.)\\s*(${ERA_PATTERN})?\\b`, "gi");
-    console.log("Processed in PLURAL REF");
+    //console.log("Processed in PLURAL REF");
     return text.replace(pluralRegex, (match, fuzzyPrefix, numberStr, eraStr, offset, fullText) => {
         if (isInsideConvertedText(fullText, offset)) return match;
         if (match.includes("H.E.")) return match;
@@ -466,7 +471,7 @@ function processPluralReferences(text) {
 }
 
 function processCenturyReferences(text) {
-    console.log("Processed in CENTURY REF");
+    //console.log("Processed in CENTURY REF");
     return text.replace(centuryRegex, (match, fuzzyPrefix, centuryNumberStr, ordinal, eraStr, offset, fullText) => {
         if (isInsideConvertedText(fullText, offset)) return match;
         if (match.includes("H.E.")) return match;
@@ -496,7 +501,7 @@ function processCenturyReferences(text) {
 }
 
 function processWrittenCenturies(text) {
-    console.log("Processed in WRITTEN CENTURIES");
+    //console.log("Processed in WRITTEN CENTURIES");
     text = normalizeOrdinalSpacing(text);
 
   return text.replace(
@@ -518,7 +523,7 @@ function processWrittenCenturies(text) {
 }
 
 function processWrittenHundreds(text) {
-    console.log("Processed in WRITTEN HUNDREDS");
+    //console.log("Processed in WRITTEN HUNDREDS");
     return text.replace(writtenHundredsRegex, (match, fuzzy, word, era, offset, fullText) => {
         if (isInsideConvertedText(fullText, offset)) return match;
         if (match.includes("H.E.")) return match;
@@ -541,57 +546,68 @@ function processWrittenHundreds(text) {
     });
 }
 
-// function protectDecades(text, decadePlaceholders) {
-//     return text.replace(decadeRegex, (match) => {
-//         const id = decadePlaceholders.length;
-//         decadePlaceholders.push(match);
-//         return `__DECADE_${id}__`;
-//     });
-// }
-// function processDecadeRanges(text) {
-//     console.log("Processed in DECADES");
-//     return text.replace(decadeRegex, (match, first, second, fuzzyPrefix, prefixEra, yearStr, suffixEra, offset, string) => {
-//         if (isInsideConvertedText(string, offset)) return match;
-//         if (match.includes("H.E.")) return match;
+function protectDecades(text, decadePlaceholders) {
+    return text.replace(decadeRegex, (match) => {
+        const id = decadePlaceholders.length;
+        decadePlaceholders.push(match);
+        return `__DECADE_${id}__`;
+    });
+}
+function processDecadeRanges(text) {
+    console.log("Processed in DECADES");
+    return text.replace(decadeRegex, (match, first, second, fuzzyPrefix, prefixEra, yearStr, suffixEra, offset, string) => {
+        if (isInsideConvertedText(string, offset)) return match;
+        if (match.includes("H.E.")) return match;
 
-//         // Detect if the original match included an 's'
-//         const hasS = /\ds\b/.test(match);
+        // Detect if the original match included an 's'
+        const hasS = /\ds\b/.test(match);
 
-//         // 🔹 Extract era if present
-//         const eraMatch = match.match(new RegExp(`(${ERA_PATTERN})`, "i"));
-//         // 🔹 Store original era for display
-//         const originalEra = eraMatch ? eraMatch[0] : "";           // 🔹 new line
-//         // 🔹 Use normalized era only for conversion
-//         const era = eraMatch ? normalizeEra(eraMatch[0]) : "CE";   // modified line
+        // 🔹 Extract era if present
+        const eraMatch = match.match(new RegExp(`(${ERA_PATTERN})`, "i"));
+        // 🔹 Store original era for display
+        const originalEra = eraMatch ? eraMatch[0] : "";           // 🔹 new line
+        // 🔹 Use normalized era only for conversion
+        const era = eraMatch ? normalizeEra(eraMatch[0]) : "CE";   // modified line
 
-//         // Convert first year
-//         const year1 = parseInt(first, 10);
-//         const converted1 = convertYear(year1, era);
+        yearStr = first.replace(/s$/, '');
 
-//         let result = `${converted1}${hasS ? "s" : ""}`;
+        // Convert first year
+        const year1 = parseInt(yearStr, 10);
+        
+        // 🚫 Skip centuries like 1800s, 1500s, etc.
+        if (year1 % 100 === 0) {
+            return match;
+        }
 
-//         // If there’s a range (e.g., "1980s–1990s")
-//         if (second) {
-//             let year2;
-//             if (second.length === 2) {
-//                 // Abbreviated decade: combine century digits from first year
-//                 const century = Math.floor(year1 / 100);
-//                 year2 = parseInt(century.toString() + second, 10);
-//             } else {
-//                 year2 = parseInt(second, 10);
-//             }
+        const converted1 = convertYear(year1, era);
 
-//             // Round **end of decade** to decade start
-//             year2 = Math.floor(year2 / 10) * 10;
-//             const converted2 = convertYear(year2, era);
+        let result = `${converted1}${hasS ? "s" : ""}`;
 
-//             result = `${converted1}${hasS ? "s" : ""}–${converted2}${hasS ? "s" : ""}`;
-//         }
+        // If there’s a range (e.g., "1980s–1990s")
+        if (second) {
+            let year2Str = second.replace(/s$/, '');
+            let year2;
+            if (year2Str.length === 2) {
+                // Abbreviated decade: combine century digits from first year
+                const century = Math.floor(year1 / 100);
+                year2 = parseInt(century.toString() + year2Str, 10);
+            } else {
+                year2 = parseInt(year2Str, 10);
+            }
 
-//         //return `${result} H.E. (Holocene Era) [converted from ${match}]${originalEra ? " " + originalEra : ""}`;
-//         return `${result} H.E. (Holocene Era) [converted from ${match} ${era}]`;
-//     });
-// }
+            if (year2 % 100 === 0) return match;
+
+            // Round **end of decade** to decade start
+            year2 = Math.floor(year2 / 10) * 10;
+            const converted2 = convertYear(year2, era);
+
+            result = `${converted1}${hasS ? "s" : ""}–${converted2}${hasS ? "s" : ""}`;
+        }
+
+        //return `${result} H.E. (Holocene Era) [converted from ${match}]${originalEra ? " " + originalEra : ""}`;
+        return `${result} H.E. (Holocene Era) [converted from ${match} ${era}]`;
+    });
+}
 
 function processText(text) {
     const chainPlaceholders = [];
@@ -612,25 +628,58 @@ function processText(text) {
     });
 
     //Protects decades before any conversion
-    //text = protectDecades(text, decadePlaceholders);
+    text = protectDecades(text, decadePlaceholders);
     
-    text = protectConverted(text);
+    //Might be extranious:
+    //text = protectConverted(text);
 
     //Processes singles + unlabeled
     text = processSingleYears(text);
+    const singleYearsConvertedTagSafeBox = [];
+    text = text.replace(masterConvertedRegex, (match) => {
+        const id = singleYearsConvertedTagSafeBox.length;
+        singleYearsConvertedTagSafeBox.push(match);
+        return `__SINGLE_YEARS_TAG_${id}__`;
+    });
+
     text = processUnlabeledYears(text);
+    const unlabeledYearsConvertedTagSafeBox = [];
+    text = text.replace(masterConvertedRegex, (match) => {
+        const id = unlabeledYearsConvertedTagSafeBox.length;
+        unlabeledYearsConvertedTagSafeBox.push(match);
+        return `__UNLABELED_YEARS_TAG_${id}__`;
+    });
 
     // Processes plural century references
     text = processPluralReferences(text);
+    const pluralYearsConvertedTagSafeBox = [];
+    text = text.replace(masterConvertedRegex, (match) => {
+        const id = pluralYearsConvertedTagSafeBox.length;
+        pluralYearsConvertedTagSafeBox.push(match);
+        return `__PLURAL_YEARS_TAG_${id}__`;
+    });
 
-    //MOVING DOWN    // Convert written hundreds (e.g., "nineteen hundreds") to numeric form first
+    // Convert written hundreds (e.g., "nineteen hundreds") to numeric form first
     text = processWrittenHundreds(text);
+    const writtenHundredsYearsConvertedTagSafeBox = [];
+    text = text.replace(masterConvertedRegex, (match) => {
+        const id = writtenHundredsYearsConvertedTagSafeBox.length;
+        writtenHundredsYearsConvertedTagSafeBox.push(match);
+        return `__WRITTEN_HUNDREDS_YEARS_TAG_${id}__`;
+    });
 
     // Processes written century numbers and converts them to numbers for the next step
     text = processWrittenCenturies(text);
+        //written centuries safeboxing skipped so they can convert in the next method:
 
     // Processes century number references and converts them to plural century references
     text = processCenturyReferences(text);
+    const centuriesConvertedTagSafeBox = [];
+    text = text.replace(masterConvertedRegex, (match) => {
+        const id = centuriesConvertedTagSafeBox.length;
+        centuriesConvertedTagSafeBox.push(match);
+        return `__CENTURIES_TAG_${id}__`;
+    });
 
     //Restores ranges and process them
     text = text.replace(/__RANGE_(\d+)__/g, (_, i) => {
@@ -642,13 +691,37 @@ function processText(text) {
         return chainPlaceholders[i];
     });
 
-    // // Processes decade ranges like "1980s–1990s"
-    // text = text.replace(/__DECADE_(\d+)__/g, (_, i) => {
-    //     return processDecadeRanges(decadePlaceholders[i]);
-    // });
+    // Processes decade ranges like "1980s–1990s"
+    text = text.replace(/__DECADE_(\d+)__/g, (_, i) => {
+        return processDecadeRanges(decadePlaceholders[i]);
+    });
 
+    //Might be extranious
     // Restores converted text BEFORE ranges
-    text = restoreConverted(text);
+    //text = restoreConverted(text);
+
+
+    //RESTORES EACH TAGS FROM THE SAFEBOXES
+    text = text.replace(/__SINGLE_YEARS_TAG_(\d+)__/g, (_, id) => {
+        console.log("Single Years Tags Released");
+        return singleYearsConvertedTagSafeBox[id];
+    });
+    text = text.replace(/__UNLABELED_YEARS_TAG_(\d+)__/g, (_, id) => {
+        console.log("Unlabeled Years Tags Released");
+        return unlabeledYearsConvertedTagSafeBox[id];
+    });
+    text = text.replace(/__PLURAL_YEARS_TAG_(\d+)__/g, (_, id) => {
+        console.log("Plural Years Tags Released");
+        return pluralYearsConvertedTagSafeBox[id];
+    });
+    text = text.replace(/__WRITTEN_HUNDREDS_YEARS_TAG_(\d+)__/g, (_, id) => {
+        console.log("Written Hundreds Years Tags Released");
+        return writtenHundredsYearsConvertedTagSafeBox[id];
+    });
+    text = text.replace(/__CENTURIES_TAG_(\d+)__/g, (_, id) => {
+        console.log("Centuries Tags Released");
+        return centuriesConvertedTagSafeBox[id];
+    });
 
     return text;
 }
