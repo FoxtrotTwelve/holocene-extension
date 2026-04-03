@@ -81,10 +81,15 @@ const rangeRegex = new RegExp(
 );
 
 //Regex for Century references (e.g., "15th century BCE"):
+// const centuryRegex = new RegExp(
+//   `\\b(${FUZZY_MODIFIER})?(\\d+)(st|nd|rd|th)\\s+century\\s*(${ERA_PATTERN})?\\b`,
+//   "gi"
+// );
 const centuryRegex = new RegExp(
-  `\\b(${FUZZY_MODIFIER})?(\\d+)(st|nd|rd|th)\\s+century\\s*(${ERA_PATTERN})?\\b`,
+  `\\b(${FUZZY_MODIFIER})?(\\d+)(st|nd|rd|th)\\s+century(?:\\s+(${ERA_PATTERN}))?(\\s*)`,
   "gi"
 );
+console.log("UPDATED CENTURY REGEX ACTIVE");
 
 //Regex for Plural references (e.g., "1800s BCE"):
 //const pluralRegex = /\b(\d{1,4})s(?!\s*H\.E\.)\s*(${ERA_PATTERN})?\b/gi;
@@ -510,7 +515,7 @@ function processPluralReferences(text) {
 
 //Turns "13th century" into plural form "1400s" since century references is confusing
 function processCenturyReferences(text) {
-    return text.replace(centuryRegex, (match, fuzzyPrefix, centuryNumberStr, ordinal, eraStr, offset, fullText) => {
+    return text.replace(centuryRegex, (match, fuzzyPrefix, centuryNumberStr, ordinal, eraStr, trailingSpace, offset, fullText) => {
         //Checks to make sure the year isn't part of an already converted year
         if (isInsideConvertedText(fullText, offset)) return match;
         if (match.includes("H.E.")) return match;
@@ -537,7 +542,8 @@ function processCenturyReferences(text) {
         }
 
         console.log("Processed in CENTURY REF");
-        return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${centuryNumberStr}${ordinal} century${eraStr ? " " + eraStr : ""}]`;
+        console.log("UPDATED CENTURY REGEX ACTIVE");
+        return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${centuryNumberStr}${ordinal} century${eraStr ? " " + eraStr : ""}]${trailingSpace}`;
     });
 }
 
@@ -1043,8 +1049,10 @@ const allTests = [
     { input: "the 1990s", expected: "the 11990s H.E. (Holocene Era) [converted from 1990s CE]" },
     { input: "1980s–1990s", expected: "11980s–11990s H.E. (Holocene Era) [converted from 1980s–1990s CE]" },
     { input: "1980s–90s", expected: "11980s–90s H.E. (Holocene Era) [converted from 1980s–90s CE]" },
-    { input: "1980-90", expected: "11980-90 H.E. (Holocene Era) [converted from 1980-90 CE]" }
+    { input: "1980-90", expected: "11980-90 H.E. (Holocene Era) [converted from 1980-90 CE]" },
 
+    // --- LONG AND COMPLICATED ---
+    { input: "The 1980s-1990s in the late 20th century saw the birth of Jared who was born in 1991. If he was born in 100 AD or 100 B.C.E., he would have been born in a different year. But he was born in the 1900s, or rather the nineteen hundreds and not the next millennia. His lifespan is 1991-2010, and his son was born c. 2000 CE.", expected: "The 11980s-11990s H.E. (Holocene Era) [converted from 1980s-1990s CE] in the 11900s H.E. (Holocene Era) [converted from 20th century] saw the birth of Jared who was born in 11991 H.E. (Holocene Era) [converted from 1991 CE]. If he was born in 10100 H.E. (Holocene Era) [converted from 100 CE] or 9901 H.E. (Holocene Era) [converted from 100 BCE], he would have been born in a different year. But he was born in the 11900s H.E. (Holocene Era) [converted from 1900s CE], or rather the 11900s H.E. (Holocene Era) [converted from 1900 CE) and not the next millennia. His lifespan is 11991-12010 H.E. (Holocene Era) [converted from 1991-2010 CE), and his son was born c. 12000 H.E. (Holocene Era) [converted from 2000 CE]." }
 
 ];
 
