@@ -1122,6 +1122,78 @@ const allTests = [
     // C.E. at end of string: period is not re-appended (no following capital word to detect).
     { input: "I was born in 1994 C.E. My brother was born in 1996 C.E.", expected: "I was born in 11994 H.E. (Holocene Era) [converted from 1994 CE]. My brother was born in 11996 H.E. (Holocene Era) [converted from 1996 CE]." },
 
+    // --- MULTI-SENTENCE WITH SINGLES AND LABELED RANGE ---
+    // Multiple singles across sentences
+    { input: "Genghis Khan was born in 1162 CE and died in 1227 CE. His empire existed from 1206 CE to 1368 CE.",
+      expected: "Genghis Khan was born in 11162 H.E. (Holocene Era) [converted from 1162 CE] and died in 11227 H.E. (Holocene Era) [converted from 1227 CE]. His empire existed from 11206–11368 H.E. (Holocene Era) [converted from 1206 CE–1368 CE]." },
+
+    // Labeled range where only end year carries the era
+    { input: "The Viking Age was roughly 793–1066 CE. This was a period of Norse expansion and trade.",
+      expected: "The Viking Age was roughly 10793–11066 H.E. (Holocene Era) [converted from 793 CE–1066 CE]. This was a period of Norse expansion and trade." },
+
+    // Semicolons and colons as separators
+    { input: "The ancient world ended around 476 CE; the medieval period lasted until approximately 1400 CE. Key dates include: 410 CE and 455 CE.",
+      expected: "The ancient world ended around 10476 H.E. (Holocene Era) [converted from 476 CE]; the medieval period lasted until approximately 11400 H.E. (Holocene Era) [converted from 1400 CE]. Key dates include: 10410 H.E. (Holocene Era) [converted from 410 CE] and 10455 H.E. (Holocene Era) [converted from 455 CE]." },
+
+    // --- EMOJIS ---
+    // Emojis at sentence boundaries
+    { input: "🏺 Ancient Rome was founded around 753 BCE. 🏛️ The Republic lasted from 509 BCE to 27 BCE.",
+      expected: "🏺 Ancient Rome was founded around 9248 H.E. (Holocene Era) [converted from 753 BCE]. 🏛️ The Republic lasted from 9492–9974 H.E. (Holocene Era) [converted from 509 BCE–27 BCE]." },
+
+    // Emojis mid-sentence
+    { input: "The 🌍 world changed in 1492 CE 🚢 when Columbus sailed. By 1776 CE 🗽 America was independent.",
+      expected: "The 🌍 world changed in 11492 H.E. (Holocene Era) [converted from 1492 CE] 🚢 when Columbus sailed. By 11776 H.E. (Holocene Era) [converted from 1776 CE] 🗽 America was independent." },
+
+    // --- FOREIGN LANGUAGE ---
+    // Spanish sentence ("hasta" is not a range connector → two separate singles)
+    { input: "El Imperio Romano existió desde 753 BCE hasta 476 CE, según los historiadores.",
+      expected: "El Imperio Romano existió desde 9248 H.E. (Holocene Era) [converted from 753 BCE] hasta 10476 H.E. (Holocene Era) [converted from 476 CE], según los historiadores." },
+
+    // German sentence
+    { input: "Im Jahr 1914 CE begann der Erste Weltkrieg, der bis 1918 CE dauerte.",
+      expected: "Im Jahr 11914 H.E. (Holocene Era) [converted from 1914 CE] begann der Erste Weltkrieg, der bis 11918 H.E. (Holocene Era) [converted from 1918 CE] dauerte." },
+
+    // --- SENTENCE BOUNDARY ISOLATION ---
+    // Phone number range must not convert; date in separate sentence must convert
+    { input: "Call us at extension 1200-1400. The Roman Forum was built around 500 BCE.",
+      expected: "Call us at extension 1200-1400. The Roman Forum was built around 9501 H.E. (Holocene Era) [converted from 500 BCE]." },
+
+    // "Dr." abbreviation period must not trigger a sentence boundary; phone number in second sentence must not convert
+    { input: "Dr. Smith was born in 1978 CE. His office phone is 1200-1400, extension 7.",
+      expected: "Dr. Smith was born in 11978 H.E. (Holocene Era) [converted from 1978 CE]. His office phone is 1200-1400, extension 7." },
+
+    // --- MIXED ERA TYPES ---
+    // BP and BCE in the same sentence
+    { input: "Humans first arrived around 3000 BP and the Bronze Age began around 1200 BCE.",
+      expected: "Humans first arrived around 8950 H.E. (Holocene Era) [converted from 3000 BP] and the Bronze Age began around 8801 H.E. (Holocene Era) [converted from 1200 BCE]." },
+
+    // BCE range then written ordinal century CE in the next sentence
+    { input: "The Hellenistic period ran from 323 BCE to 31 BCE. The first century CE saw Rome's golden age.",
+      expected: "The Hellenistic period ran from 9678–9970 H.E. (Holocene Era) [converted from 323 BCE–31 BCE]. The 10000s H.E. (Holocene Era) [converted from 1st century CE] saw Rome's golden age." },
+
+    // Written century CE followed by unlabeled decade range in the next sentence
+    { input: "In the nineteenth century CE, the Industrial Revolution transformed society. The 1840s–1870s were decades of rapid change.",
+      expected: "In the 11800s H.E. (Holocene Era) [converted from 19th century CE], the Industrial Revolution transformed society. The 11840s–11870s H.E. (Holocene Era) [converted from 1840s–1870s CE] were decades of rapid change." },
+
+    // --- SPECIAL CHARACTERS ---
+    // Ampersand between two singles; slash in "9/11" must not convert
+    { input: "The 1914 CE & 1918 CE dates mark WWI. The 9/11 tragedy occurred in 2001 CE.",
+      expected: "The 11914 H.E. (Holocene Era) [converted from 1914 CE] & 11918 H.E. (Holocene Era) [converted from 1918 CE] dates mark WWI. The 9/11 tragedy occurred in 12001 H.E. (Holocene Era) [converted from 2001 CE]." },
+
+    // --- LIST AND PARENTHETICAL ---
+    // Comma-separated list ending with a labeled range
+    { input: "Important events: the fall of Rome in 476 CE, the Norman Conquest in 1066 CE, and the Black Death from 1347–1351 CE.",
+      expected: "Important events: the fall of Rome in 10476 H.E. (Holocene Era) [converted from 476 CE], the Norman Conquest in 11066 H.E. (Holocene Era) [converted from 1066 CE], and the Black Death from 11347–11351 H.E. (Holocene Era) [converted from 1347 CE–1351 CE]." },
+
+    // Written century inside parentheses
+    { input: "The Renaissance began in Florence around 1400 CE (roughly the early fifteenth century CE) and spread across Europe.",
+      expected: "The Renaissance began in Florence around 11400 H.E. (Holocene Era) [converted from 1400 CE] (roughly the early 11400s H.E. (Holocene Era) [converted from 15th century CE]) and spread across Europe." },
+
+    // --- EM DASH TIMELINE ---
+    // Em dashes (—) are not range connectors → three separate singles
+    { input: "Timeline of events: 44 BCE — Julius Caesar assassinated; 27 BCE — Augustus became emperor; 476 CE — Fall of Rome.",
+      expected: "Timeline of events: 9957 H.E. (Holocene Era) [converted from 44 BCE] — Julius Caesar assassinated; 9974 H.E. (Holocene Era) [converted from 27 BCE] — Augustus became emperor; 10476 H.E. (Holocene Era) [converted from 476 CE] — Fall of Rome." },
+
 ];
 
 allTests.forEach(({ input, expected }) => {
