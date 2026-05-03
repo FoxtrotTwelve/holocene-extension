@@ -260,6 +260,177 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     if (nodeValue[index - 1] && /\d/.test(nodeValue[index - 1])) return false;
     if (nodeValue[index + match.length] && /\d/.test(nodeValue[index + match.length])) return false;
 
+    // Get sentence-bounded context windows (same approach as isLikelyYearRange)
+    const rawBefore = nodeValue.slice(Math.max(0, index - 60), index);
+    const rawAfter  = nodeValue.slice(index + match.length,
+                                      Math.min(nodeValue.length, index + match.length + 60));
+
+    const sentenceBoundaryRegex = /[.!?]\s*(?=[A-Z])/g;
+    let lastBoundary = 0;
+    let bm;
+    while ((bm = sentenceBoundaryRegex.exec(rawBefore)) !== null) {
+        lastBoundary = bm.index + bm[0].length;
+    }
+    const before = rawBefore.slice(lastBoundary).toLowerCase();
+
+    const firstSentenceEnd = /[.!?]\s*(?=[A-Z])/.exec(rawAfter);
+    const after = (firstSentenceEnd
+        ? rawAfter.slice(0, firstSentenceEnd.index + 1)
+        : rawAfter
+    ).toLowerCase();
+
+    // Strong indicators — if present anywhere in the sentence, definitely a year.
+    // Fuzzy modifiers (around, circa, etc.) are intentionally NOT in this list because
+    // they also modify quantities ("Around 1400 ships sailed"). They are handled below.
+    const strongIndicators = [
+        "ce", "bce", "bc", "ad", "bp", "h.e.",
+        "c.e.", "b.c.e", "b.c.", "a.d.", "b.p.",
+        "century", "centuries", "decade", "era", "epoch",
+        "born", "died", "death", "birth", "lived", "lifespan", "lifetime",
+        "reign", "reigned", "ruled", "governed",
+        "conquered", "invaded", "defeated", "fought",
+        "existed", "survived", "flourished", "declined", "collapsed",
+        "founded", "established", "built", "constructed", "destroyed",
+        "explored", "discovered", "settled", "migrated"
+    ];
+
+    const hasStrongIndicator = strongIndicators.some(indicator => {
+        const escaped = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const endBoundary = /\w$/.test(indicator) ? '\\b' : '';
+        const pattern = new RegExp(`\\b${escaped}${endBoundary}`, 'i');
+        return pattern.test(before) || pattern.test(after);
+    });
+
+    if (hasStrongIndicator) return true;
+
+    // If a count noun follows the number, it is likely a quantity, not a year.
+    // Applies to all unlabeled years (not just fuzzy-prefixed ones).
+    // Bare years with nothing after ("1948") are safe — afterWordMatch will be null.
+    const verbsEndingInS = [
+        "is", "was", "has", "does", "goes", "says", "comes",
+        "seems", "appears", "means", "remains", "starts", "begins", "ends",
+        "takes", "makes", "gives", "gets", "becomes", "proves", "shows",
+        "includes", "contains", "runs", "leads", "marks", "occurs", "follows"
+    ];
+    const irregularPlurals = [
+        // Original
+        "men", "women", "children", "people",
+        "mice", "geese", "teeth", "feet", "oxen", "lice",
+        "sheep", "deer", "fish", "moose", "bison",
+        // Zero-change animals
+        "cattle", "elk", "buffalo", "swine",
+        "trout", "salmon", "carp", "cod", "herring", "tuna", "shrimp", "squid",
+        "quail", "grouse",
+        // Zero-change other
+        "aircraft", "spacecraft", "offspring", "dice",
+        // Latin -um → -a plurals
+        "data", "media", "bacteria", "curricula", "spectra", "strata",
+        "larvae", "errata", "formulae", "antennae", "vertebrae",
+        // Latin -us → -i plurals
+        "alumni", "fungi", "cacti", "nuclei", "stimuli",
+        "radii", "syllabi", "octopi", "hippopotami",
+        // Greek -on → -a plurals
+        "criteria", "phenomena", "automata",
+        // Other
+        "dormice", "brethren", "kine",
+        // Latin -um/-us/-a variants (less common)
+        "corpora", "genera", "addenda", "memoranda", "referenda",
+        // Latin -a/-ae feminines
+        "alumnae", "nebulae", "algae", "minutiae", "ova",
+        // Greek -a plurals
+        "stigmata", "schemata",
+        // Latin -us → -i (additional)
+        "foci", "loci", "calculi", "moduli", "bronchi",
+        // Loanwords with zero-change or foreign plural
+        "magi", "paparazzi", "graffiti", "samurai",
+        // Zero-change fish (additional)
+        "pike", "mackerel", "perch", "bream", "plaice", "flounder",
+        // Zero-change animals (additional)
+        "wildebeest", "gnu", "ibis",
+        // Nationality words — lowercase because `after` is always .toLowerCase()'d before matching
+        "japanese", "chinese", "vietnamese", "portuguese",
+        "swiss", "lebanese", "thai", "norse",
+        // Religious/mythological
+        "seraphim", "cherubim",
+        // Nationality -ese
+        "sudanese", "taiwanese", "congolese", "senegalese", "maltese", "nepalese", "burmese",
+        "faroese", "javanese", "balinese", "cantonese", "togolese", "gabonese", "timorese",
+        "guyanese", "sinhalese", "bhutanese", "milanese", "viennese", "sundanese", "assamese", "ceylonese",
+        // Nationality -ish
+        "english", "irish", "british", "welsh", "scottish", "danish", "swedish", "polish",
+        "turkish", "kurdish", "flemish", "cornish", "amish", "spanish", "finnish",
+        // Nationality -ch
+        "french", "dutch",
+        // Indigenous / ethnic peoples — zero-change
+        "hmong", "inuit", "maori", "maasai", "sioux", "iroquois", "cherokee", "navajo", "apache", "lakota",
+        "zulu", "maya", "hausa", "yoruba", "tuareg", "berber", "fulani", "bedouin", "romani", "quechua",
+        "aymara", "ojibwe", "delaware", "hopi", "zuni", "shawnee", "seminole", "cree", "yupik", "aleut",
+        "hui", "miao", "yi", "bantu", "khoisan", "ndebele", "shona", "xhosa", "sotho", "tswana",
+        "lenape", "anishinaabe",
+        // Historical peoples / dynasties — zero-change
+        "ninja", "ronin", "shogun", "ming", "tang", "qing", "zhou", "shang", "song", "sui", "yuan", "han", "manchu",
+        // Science — Biology
+        "protozoa", "mitochondria", "cilia", "flagella", "septa", "spermatozoa", "ganglia", "atria",
+        "foramina", "viscera", "stomata", "mycelia", "thalli", "sporangia", "villi", "glomeruli",
+        "medusae", "archaea", "rhizobia",
+        // Science — Physics / Astronomy / Mathematics
+        "quanta", "maxima", "minima", "extrema", "optima", "novae", "supernovae", "coronae", "aurorae",
+        "equilibria", "polyhedra", "tetrahedra", "hexahedra", "octahedra", "dodecahedra", "icosahedra",
+        "lemmata", "rhombi", "nimbi", "cumulonimbi",
+        // Historical Latin terms
+        "denarii", "sestertii", "aurei", "solidi", "gladii", "ballistae", "scuta", "pila", "hastae", "loricae",
+        "drachmae", "oboli", "tesserae", "insulae", "tabernae", "thermae", "centuriae", "stipendia",
+        "tributa", "symposia", "auditoria", "desiderata", "corrigenda", "agenda", "insignia",
+        "emporia", "gymnasia", "colloquia", "trivia", "consortia",
+        // Zero-change animals — additional
+        "reindeer", "caribou", "char", "dace", "roach", "rudd", "chub", "tench", "turbot", "halibut",
+        "sprat", "sole", "walleye", "lungfish", "impala", "kudu", "springbok", "eland", "gemsbok", "oryx",
+        "yak", "swordfish", "starfish", "crayfish", "catfish", "goldfish", "jellyfish", "cuttlefish",
+        "bluefish", "dogfish", "pufferfish", "clownfish", "angelfish", "needlefish",
+        // Italian loanwords
+        "panini", "ravioli", "tortellini", "biscotti", "cannoli", "gelati", "zucchini", "gnocchi",
+        "broccoli", "linguine", "rigatoni", "arancini", "cappuccini",
+        // Hebrew / Semitic plurals
+        "kibbutzim", "moshavim", "midrashim", "elohim",
+        // Other loanwords and irregular forms
+        "watercraft", "hovercraft", "manx", "moorish", "frankish", "lacunae", "fasciae", "sequelae",
+        "laminae", "papillae", "bursae", "scapulae", "sarissae", "hakka", "hokkien",
+        // Latin -um → -a (additional)
+        "millennia", "aquaria", "crania", "stadia", "opera",
+        // Latin -us → -i (additional)
+        "bacilli", "cocci", "termini", "tori",
+        // Zero-change animals (additional)
+        "ibex", "chamois", "mink", "lynx", "ptarmigan", "teal", "pheasant", "snipe", "woodcock", "capercaillie",
+        "mullet", "whitefish", "rockfish", "sockeye", "coho", "steelhead",
+        // Japanese / East Asian zero-change loanwords
+        "geisha", "haiku", "sensei", "manga", "anime", "emoji",
+        // Ethnic / national (additional)
+        "basque", "sami",
+        // Italian / Latin cultural plurals
+        "illuminati", "literati", "cognoscenti"
+    ];
+
+    const isCountNoun = w => {
+        if (!w) return false;
+        if (irregularPlurals.includes(w)) return true;
+        if (w.endsWith("s")) {
+            const isTemporalWord = strongIndicators.some(ind => {
+                const escaped = ind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                return new RegExp(`^${escaped}$`, 'i').test(w);
+            });
+            return !isTemporalWord && !verbsEndingInS.includes(w);
+        }
+        return false;
+    };
+
+    const nearbyMatch = after.match(/^\s*([a-z]+)(?:\s+([a-z]+))?/);
+    if (nearbyMatch) {
+        const [, word1, word2] = nearbyMatch;
+        if (isCountNoun(word1)) return false;
+        // Look past a single adjective/modifier (ends in -ing, -ed, -ly) to the next word
+        if (/(?:ing|ed|ly)$/.test(word1) && isCountNoun(word2)) return false;
+    }
+
     return true;
 }
 
@@ -1193,6 +1364,16 @@ const allTests = [
     // Em dashes (—) are not range connectors → three separate singles
     { input: "Timeline of events: 44 BCE — Julius Caesar assassinated; 27 BCE — Augustus became emperor; 476 CE — Fall of Rome.",
       expected: "Timeline of events: 9957 H.E. (Holocene Era) [converted from 44 BCE] — Julius Caesar assassinated; 9974 H.E. (Holocene Era) [converted from 27 BCE] — Augustus became emperor; 10476 H.E. (Holocene Era) [converted from 476 CE] — Fall of Rome." },
+
+    // --- TRYING TO TRICK IT ---
+    { input: "Around 1400 ships sailed across the ocean.", expected: "Around 1400 ships sailed across the ocean." },
+    { input: "c. 1200 was the best", expected: "c. 11200 H.E. (Holocene Era) [converted from 1200 CE] was the best" },
+    { input: "~ 300 is thought to be the fall of Rome", expected: "~ 10300 H.E. (Holocene Era) [converted from 300 CE] is thought to be the fall of Rome" },
+    { input: "around 1000 is the first milennia", expected: "around 11000 H.E. (Holocene Era) [converted from 1000 CE] is the first milennia" },
+    { input: "1200 was the best", expected: "11200 H.E. (Holocene Era) [converted from 1200 CE] was the best" },
+    { input: "300 is thought to be the fall of Rome", expected: "10300 H.E. (Holocene Era) [converted from 300 CE] is thought to be the fall of Rome" },
+    { input: "1200 men manned the ship in the assault on Paris in 1200.", expected: "1200 men manned the ship in the assault on Paris in 11200 H.E. (Holocene Era) [converted from 1200 CE]." },
+    { input: "600 running mice finished the race in 1999.", expected: "600 running mice finished the race in 11999 H.E. (Holocene Era) [converted from 1999 CE]." }
 
 ];
 
