@@ -45,7 +45,7 @@ const yearRegex = new RegExp(
   `(\\d{1,3}(?:,\\d{3})*|\\d{1,6})` + // group 3: year
   //`(?:\\s*(${ERA_PATTERN}))\\b`,       // group 4: suffix era
   //`\\s*(${ERA_PATTERN})(?=\\b|[^a-zA-Z])`,
-  `\\s*(${ERA_PATTERN})\\.?`,           // group 4: suffix era
+  `\\s*(${ERA_PATTERN})(\\.)?`,           // group 4: suffix era, group 5: trailing period
   "gi"
 );
 
@@ -280,17 +280,59 @@ function isLikelyYearRange(y1, y2, prefixEra, era1, era2, text, offset, matchLen
         if (["c.", "ca.", "circa"].some(f => lower.includes(f))) return true;
     }
 
-    // look at surrounding words (keep your existing context logic)
-    const before = text.slice(Math.max(0, offset - 20), offset).toLowerCase();
-    const after = text.slice(offset + matchLength, offset + matchLength + 40).toLowerCase();
+    // Look at surrounding words, clipped to the current sentence
+    const rawBefore = text.slice(Math.max(0, offset - 60), offset);
+    const rawAfter  = text.slice(offset + matchLength, Math.min(text.length, offset + matchLength + 60));
+
+    // Trim before: keep only text from the start of the most recent sentence
+    const sentenceBoundaryRegex = /[.!?]\s*(?=[A-Z])/g;
+    let lastBoundary = 0;
+    let bm;
+    while ((bm = sentenceBoundaryRegex.exec(rawBefore)) !== null) {
+        lastBoundary = bm.index + bm[0].length;
+    }
+    const before = rawBefore.slice(lastBoundary).toLowerCase();
+
+    // Trim after: keep only text up to the end of the current sentence
+    const firstSentenceEnd = /[.!?]\s*(?=[A-Z])/.exec(rawAfter);
+    const after = (firstSentenceEnd
+        ? rawAfter.slice(0, firstSentenceEnd.index + 1)
+        : rawAfter
+    ).toLowerCase();
 
     const dateIndicators = [
-        "year","years","during","ad","ce","bce","bc","bp",
-        "a.d.","c.e.","b.c.e","b.c.","b.p.","century","centuries",
-        "since","c.","ca.","circa","early","mid-","late", "in"
+        // Era labels
+        "ad", "ce", "bce", "bc", "bp",
+        "a.d.", "c.e.", "b.c.e", "b.c.", "b.p.", "h.e.",
+        // Fuzzy/approximation markers
+        "c.", "ca.", "circa", "around", "approximately",
+        // Temporal qualifiers
+        "early", "mid-", "late", "during", "since",
+        // Temporal units
+        "year", "years", "century", "centuries", "decade", "era", "epoch",
+        // Biographical context
+        "born", "died", "death", "birth", "lived", "lifespan", "lifetime",
+        // Historical governance/military
+        "reign", "reigned", "ruled", "governed",
+        "conquered", "invaded", "defeated", "fought",
+        // Historical existence/activity
+        "existed", "survived", "flourished", "declined", "collapsed",
+        "founded", "established", "built", "constructed", "destroyed",
+        // Historical exploration/movement
+        "sailed", "explored", "discovered", "settled", "migrated",
+        // Range connectors
+        "through", "spanning", "in"
     ];
 
-    return dateIndicators.some(indicator => before.includes(indicator) || after.includes(indicator));
+    // Use word-boundary matching to avoid false positives from substrings
+    // (e.g. "ce" inside "centimeters", "in" inside "interesting")
+    // Indicators ending in a word char get \b on both sides; those ending in punctuation only at start.
+    return dateIndicators.some(indicator => {
+        const escaped = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const endBoundary = /\w$/.test(indicator) ? '\\b' : '';
+        const pattern = new RegExp(`\\b${escaped}${endBoundary}`, 'i');
+        return pattern.test(before) || pattern.test(after);
+    });
 }
 
 //Checks to make sure it isn't within [converted from ... ]
@@ -366,7 +408,7 @@ function parseWrittenHundreds(word) {
 
 //----------------CORE TEXT PROCESSING-----------------
 
-function processRanges(text) {
+function processRanges(text, outerSurrounding = null, outerMatchOffset = 0) {
     return text.replace(rangeRegex, (match, fuzzyPrefix, prefixEra, y1, era1, y2, era2, offset, string) => {
         const before = string[offset - 1];
         const after = string[offset + match.length];
@@ -380,8 +422,12 @@ function processRanges(text) {
         const year1 = parseYear(y1);
         const year2 = parseYear(y2);
 
+        //Uses stored outer context when available (for ranges restored from placeholders)
+        const surroundingText = outerSurrounding ?? string;
+        const matchOffsetInContext = outerSurrounding != null ? outerMatchOffset : offset;
+
         //Checks to make sure it's likely a year range
-        if (!isLikelyYearRange(year1, year2, prefixEra, era1, era2, string, offset, match.length, fuzzyPrefix)) {
+        if (!isLikelyYearRange(year1, year2, prefixEra, era1, era2, surroundingText, matchOffsetInContext, match.length, fuzzyPrefix)) {
             return match; // leave as-is if not likely a year
         }
 
@@ -427,13 +473,17 @@ function processRanges(text) {
         const converted1 = convertYear(year1, finalEra1);
         const converted2 = convertYear(year2, finalEra2);
 
+        // Unlabeled ranges (no era in input) use "year–year ERA"; labeled use "year ERA–year ERA"
+        const fromLabel = hasEra
+            ? `${year1} ${finalEra1}–${year2} ${finalEra2}`
+            : `${year1}–${year2} ${finalEra2}`;
         console.log("Processed in RANGES");
-        return `${formattedPrefix}${converted1}–${converted2} H.E. (Holocene Era) [converted from ${year1} ${finalEra1}–${year2} ${finalEra2}]`;
+        return `${formattedPrefix}${converted1}–${converted2} H.E. (Holocene Era) [converted from ${fromLabel}]`;
     });
 }
 
 function processSingleYears(text) {
-    return text.replace(yearRegex, (match, fuzzyPrefix, prefixEra, yearStr, suffixEra, offset, string) => {
+    return text.replace(yearRegex, (match, fuzzyPrefix, prefixEra, yearStr, suffixEra, trailingPeriod, offset, string) => {
         const before = string[offset - 1];
         const after = string[offset + match.length];
 
@@ -457,10 +507,16 @@ function processSingleYears(text) {
 
         const converted = convertYear(year, era);
 
+        // Dotted eras (B.C.E., A.D., etc.) have their trailing period consumed by ERA_PATTERN.
+        // If the next word is capitalised, that period was also a sentence-ender — re-append it.
+        const eraConsumedPeriod = suffixEra && /\.$/.test(suffixEra);
+        const afterText = string.slice(offset + match.length);
+        const appendPeriod = (eraConsumedPeriod && (/^\s+[A-Z]/.test(afterText) || afterText.trim() === '')) ? '.' : '';
+
         console.log("YEAR IS: " + year + " | ERA IS: " + era);
 
         console.log("Processed in SINGLE YEARS");
-        return `${formattedPrefix}${converted} H.E. (Holocene Era) [converted from ${year} ${era}]`;
+        return `${formattedPrefix}${converted} H.E. (Holocene Era) [converted from ${year} ${era}]${appendPeriod}${trailingPeriod || ''}`;
     });
 }
 
@@ -731,10 +787,15 @@ function processText(text) {
     //Protects abbreviated decades
     text = protectAbbreviatedDecades(text, abbreviatedDecadePlaceholders);
     
-    //Extracts ranges and replace with placeholders
-    text = text.replace(rangeRegex, (match) => {
+    //Extracts ranges and replace with placeholders, storing surrounding context
+    text = text.replace(rangeRegex, (match, _1, _2, _3, _4, _5, _6, offset, string) => {
         const id = rangePlaceholders.length;
-        rangePlaceholders.push(match);
+        const ctxStart = Math.max(0, offset - 80);
+        rangePlaceholders.push({
+            match,
+            surrounding: string.slice(ctxStart, offset + match.length + 80),
+            matchOffset: offset - ctxStart
+        });
         return `__RANGE_${id}__`;
     });
 
@@ -790,9 +851,10 @@ function processText(text) {
         return `__CENTURIES_TAG_${id}__`;
     });
 
-    //Restores ranges and process them
+    //Restores ranges and process them, passing stored context for unlabeled range detection
     text = text.replace(/__RANGE_(\d+)__/g, (_, i) => {
-        return processRanges(rangePlaceholders[i]);
+        const { match, surrounding, matchOffset } = rangePlaceholders[i];
+        return processRanges(match, surrounding, matchOffset);
     });
 
     //Restores chains
@@ -873,8 +935,8 @@ const allTests = [
     // --- SINGLE DATES ---
     { input: "1948", expected: "11948 H.E. (Holocene Era) [converted from 1948 CE]" },
     { input: "44BC", expected: "9957 H.E. (Holocene Era) [converted from 44 BCE]" },
-    { input: "1865 A.D.", expected: "11865 H.E. (Holocene Era) [converted from 1865 CE]" },
-    { input: "1994C.E.", expected: "11994 H.E. (Holocene Era) [converted from 1994 CE]" },
+    { input: "1865 A.D.", expected: "11865 H.E. (Holocene Era) [converted from 1865 CE]." },
+    { input: "1994C.E.", expected: "11994 H.E. (Holocene Era) [converted from 1994 CE]." },
     
     
     // --- RANGE TESTS ---
@@ -897,8 +959,9 @@ const allTests = [
     { input: "1950 BP", expected: "10000 H.E. (Holocene Era) [converted from 1950 BP]" },
     { input: "1951 BP", expected: "9999 H.E. (Holocene Era) [converted from 1951 BP]" },
     { input: "50BP", expected: "11900 H.E. (Holocene Era) [converted from 50 BP]" },
-    { input: "40B.P.", expected: "11910 H.E. (Holocene Era) [converted from 40 BP]" },
-    { input: "30 B.P.", expected: "11920 H.E. (Holocene Era) [converted from 30 BP]" },
+    { input: "40B.P.", expected: "11910 H.E. (Holocene Era) [converted from 40 BP]." },
+    { input: "30 B.P.", expected: "11920 H.E. (Holocene Era) [converted from 30 BP]." },
+    { input: "the year 30 B.P. was rough", expected: "the year 11920 H.E. (Holocene Era) [converted from 30 BP] was rough" },
 
     // --- UNLABELED RANGES ---
     { input: "1000–1500", expected: "1000–1500" },
@@ -941,7 +1004,7 @@ const allTests = [
     { input: "c. 500 BCE", expected: "c. 9501 H.E. (Holocene Era) [converted from 500 BCE]" },
     { input: "~1200 AD", expected: "~11200 H.E. (Holocene Era) [converted from 1200 CE]" },
     { input: "around 300 BC", expected: "around 9701 H.E. (Holocene Era) [converted from 300 BCE]" },
-    { input: "c. 1000–1500", expected: "c. 11000–11500 H.E. (Holocene Era) [converted from 1000 CE–1500 CE]" },
+    { input: "c. 1000–1500", expected: "c. 11000–11500 H.E. (Holocene Era) [converted from 1000–1500 CE]" },
     { input: "c. 1200", expected: "c. 11200 H.E. (Holocene Era) [converted from 1200 CE]" },
     { input: "~ 300", expected: "~ 10300 H.E. (Holocene Era) [converted from 300 CE]" },
     { input: "around 1000", expected: "around 11000 H.E. (Holocene Era) [converted from 1000 CE]" },
@@ -1052,7 +1115,12 @@ const allTests = [
     { input: "1980-90", expected: "11980-90 H.E. (Holocene Era) [converted from 1980-90 CE]" },
 
     // --- LONG AND COMPLICATED ---
-    { input: "The 1980s-1990s in the late 20th century saw the birth of Jared who was born in 1991. If he was born in 100 AD or 100 B.C.E., he would have been born in a different year. But he was born in the 1900s, or rather the nineteen hundreds and not the next millennia. His lifespan is 1991-2010, and his son was born c. 2000 CE.", expected: "The 11980s-11990s H.E. (Holocene Era) [converted from 1980s-1990s CE] in the 11900s H.E. (Holocene Era) [converted from 20th century] saw the birth of Jared who was born in 11991 H.E. (Holocene Era) [converted from 1991 CE]. If he was born in 10100 H.E. (Holocene Era) [converted from 100 CE] or 9901 H.E. (Holocene Era) [converted from 100 BCE], he would have been born in a different year. But he was born in the 11900s H.E. (Holocene Era) [converted from 1900s CE], or rather the 11900s H.E. (Holocene Era) [converted from 1900 CE) and not the next millennia. His lifespan is 11991-12010 H.E. (Holocene Era) [converted from 1991-2010 CE), and his son was born c. 12000 H.E. (Holocene Era) [converted from 2000 CE]." }
+    { input: "The 1980s–1990s in the late 20th century saw the birth of Jared who was born in 1991. If he was born in 100 AD or 100 B.C.E., he would have been born in a different year. But he was born in the 1900s, or rather the nineteen hundreds and not the next millennia. His lifespan is 1991-2010, and his son was born c. 2000 CE.", expected: "The 11980s–11990s H.E. (Holocene Era) [converted from 1980s–1990s CE] in the late 11900s H.E. (Holocene Era) [converted from 20th century] saw the birth of Jared who was born in 11991 H.E. (Holocene Era) [converted from 1991 CE]. If he was born in 10100 H.E. (Holocene Era) [converted from 100 CE] or 9901 H.E. (Holocene Era) [converted from 100 BCE], he would have been born in a different year. But he was born in the 11900s H.E. (Holocene Era) [converted from 1900s CE], or rather the 11900s H.E. (Holocene Era) [converted from 1900 CE] and not the next millennia. His lifespan is 11991–12010 H.E. (Holocene Era) [converted from 1991–2010 CE], and his son was born c. 12000 H.E. (Holocene Era) [converted from 2000 CE]." },
+
+    // --- DOTTED ERA SENTENCE-ENDING ---
+    // C.E. mid-sentence: period re-appended because next word is capitalised.
+    // C.E. at end of string: period is not re-appended (no following capital word to detect).
+    { input: "I was born in 1994 C.E. My brother was born in 1996 C.E.", expected: "I was born in 11994 H.E. (Holocene Era) [converted from 1994 CE]. My brother was born in 11996 H.E. (Holocene Era) [converted from 1996 CE]." },
 
 ];
 
