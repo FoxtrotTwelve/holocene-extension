@@ -264,6 +264,9 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     if ("$€£¥₹₩₽฿₺₦₫₱¢₴₿".includes(nodeValue[index - 1])) return false;
     //Avoid percent sign immediately after (100%)
     if (nodeValue[index + match.length] === "%") return false;
+    // Multiplication sign — dimension/resolution patterns (1920×1080)
+    if (nodeValue[index + match.length] === '×') return false;
+    if (nodeValue[index - 1] === '×') return false;
 
     // Get sentence-bounded context windows (same approach as isLikelyYearRange)
     const rawBefore = nodeValue.slice(Math.max(0, index - 60), index);
@@ -283,6 +286,9 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         ? rawAfter.slice(0, firstSentenceEnd.index + 1)
         : rawAfter
     ).toLowerCase();
+
+    // Single-letter designator + hyphen prefix (I-495, A-320, etc.)
+    if (/\b[A-Za-z]-$/.test(rawBefore)) return false;
 
     // Strong indicators — if present anywhere in the sentence, definitely a year.
     // Fuzzy modifiers (around, circa, etc.) are intentionally NOT in this list because
@@ -307,6 +313,31 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     });
 
     if (hasStrongIndicator) return true;
+
+    // Fiscal period notation: Q3 2024, H1 2023 — treat the following year as temporal
+    const fiscalPrecedingMatch = rawBefore.match(/\b(Q[1-4]|H[12])\s*$/i);
+    if (fiscalPrecedingMatch) return true;
+
+    // Words immediately before the number that mark it as a non-year identifier
+    const precedingInhibitors = new Set([
+        // Road / transportation
+        'highway', 'hwy', 'route', 'rte', 'freeway', 'expressway', 'interstate',
+        // Network / tech standards
+        'port', 'rfc', 'isbn', 'issn', 'sku',
+        // Legal / administrative
+        'patent', 'law', 'ordinance', 'statute', 'regulation',
+        // HTTP / error codes
+        'http', 'error', 'status',
+        // Document references
+        'page', 'p.', 'figure', 'fig', 'exhibit', 'appendix', 'chapter', 'article', 'section', 'number',
+        // Score / rating context
+        'score', 'scored', 'scoring', 'rating', 'rated', 'ranked', 'ranking',
+        // Misc designators
+        'form', 'episode', 'ep', 'channel', 'track', 'gate', 'exit', 'room', 'floor', 'code',
+    ]);
+    const immPrecMatch = before.match(/\b([a-z.]+)\s*$/);
+    const immPrecWord = immPrecMatch ? immPrecMatch[1] : '';
+    if (precedingInhibitors.has(immPrecWord)) return false;
 
     // If a count noun follows the number, it is likely a quantity, not a year.
     // Applies to all unlabeled years (not just fuzzy-prefixed ones).
@@ -515,7 +546,7 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         "bit", "byte", "mp", "dpi",
         // Physics / science
         "ev", "kev", "mev", "gev", "mol", "sr", "bq", "sv",
-        "rad", "bar", "mbar", "torr", "mmhg", "atm",
+        "rad", "bar", "mbar", "torr", "mmhg", "hpa", "atm",
         // Other common
         "rpm", "mph", "kph", "kt", "psi", "btu",
         "cal", "kcal", "db", "lm", "lx",
@@ -523,7 +554,7 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         // Power / electrical mode
         "hp", "bhp", "ac", "dc",
         // Rate abbreviations
-        "bpm", "mpg",
+        "bpm", "mpg", "baud",
         // Ordinal suffixes (400th, 1200th, etc.)
         "st", "nd", "rd", "th",
         // Medical
@@ -612,12 +643,41 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
                 const escaped = ind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 return new RegExp(`^${escaped}$`, 'i').test(w);
             });
-            return !isTemporalWord && !verbsEndingInS.includes(w) && !adjectivesEndingInS.includes(w);
+            const singularsEndingInS = [
+                // Greek/Latin -is forms (singular, not plural)
+                'crisis', 'basis', 'thesis', 'hypothesis', 'analysis', 'synthesis',
+                'diagnosis', 'prognosis', 'emphasis', 'genesis', 'nemesis',
+                // Latin -us forms (singular)
+                'status', 'bonus', 'campus', 'circus', 'focus', 'nexus', 'radius', 'virus',
+                // Abstract nouns
+                'progress', 'success', 'access', 'excess', 'process', 'stress',
+                // Common singulars ending in s
+                'class', 'glass', 'mass', 'brass', 'gas', 'plus',
+            ];
+            return !isTemporalWord && !verbsEndingInS.includes(w) && !adjectivesEndingInS.includes(w) && !singularsEndingInS.includes(w);
         }
         return false;
     };
 
     const temporalBefore = /\b(?:year|century|decade|era|period|age)\b/.test(before);
+
+    // Block "word of N" patterns (e.g., "score of 750", "chapter of 247")
+    const precOfMatch = before.match(/\b(\w+)\s+of\s*$/);
+    if (precOfMatch && !temporalBefore) {
+        const wordBeforeOf = precOfMatch[1];
+        const ofNonYearContext = new Set([
+            'score', 'rating', 'fico', 'credit', 'iq', 'gpa', 'grade', 'rank',
+            'page', 'chapter', 'section', 'figure', 'number',
+        ]);
+        if (ofNonYearContext.has(wordBeforeOf)) return false;
+    }
+    // Block "word to/at N" patterns (e.g., "rating to 780")
+    const precPrepMatch = before.match(/\b(\w+)\s+(?:to|at)\s*$/);
+    if (precPrepMatch && !temporalBefore) {
+        const wordBeforePrep = precPrepMatch[1];
+        const prepNonYearContext = new Set(['score', 'rating', 'fico', 'credit', 'iq', 'gpa', 'grade', 'rank']);
+        if (prepNonYearContext.has(wordBeforePrep)) return false;
+    }
 
     const nearbyMatch = after.match(/^\s*([a-z]+)(?:\s+([a-z]+))?/);
     if (nearbyMatch) {
@@ -892,6 +952,16 @@ function processSingleYears(text) {
 }
 
 function processUnlabeledYears(text) {
+    // Handle fiscal year prefix notation where no word boundary exists (FY2025 → FY + 2025)
+    text = text.replace(/\b(FY)(\d{4})\b/gi, (match, prefix, yearStr, offset, string) => {
+        if (isInsideConvertedText(string, offset)) return match;
+        const year = parseInt(yearStr, 10);
+        if (year < 100 || year > 3000) return match;
+        const converted = convertYear(year, 'CE');
+        console.log("Processed in UNLABELED YEARS");
+        return `${prefix}${converted} H.E. (Holocene Era) [converted from ${year} CE]`;
+    });
+
     return text.replace(/\b(\d{3,4})\b/g, (match, p1, offset, string) => {
 
         //Checks to make sure it isn't an already converted date
@@ -1030,6 +1100,27 @@ function processWrittenHundreds(text) {
 //Protects decades (singular years or ranges with "s" with 1-9 in second to last digit) before other processes
 function protectDecades(text, decadePlaceholders){
     return text.replace(decadeRegex, (match, first, second, offset, string) => {
+
+        // Don't protect resolution/dimension patterns where × is adjacent (1920×1080)
+        const charAfter = string[offset + match.length];
+        const charBefore = offset > 0 ? string[offset - 1] : '';
+        if (charAfter === '×' || charBefore === '×') return match;
+
+        // Don't protect when a preceding word marks this as a non-year identifier
+        const rawBefore = string.slice(Math.max(0, offset - 60), offset);
+        const before = rawBefore.slice(rawBefore.search(/\S/)).toLowerCase();
+        const immPrecMatch = before.match(/\b([a-z.]+)\s*$/);
+        const immPrecWord = immPrecMatch ? immPrecMatch[1] : '';
+        const decadeInhibitors = new Set([
+            'highway', 'hwy', 'route', 'rte', 'freeway', 'expressway', 'interstate',
+            'port', 'rfc', 'isbn', 'issn', 'sku',
+            'patent', 'law', 'ordinance', 'statute', 'regulation',
+            'http', 'error', 'status',
+            'page', 'p.', 'figure', 'fig', 'exhibit', 'appendix', 'chapter', 'article', 'section', 'number',
+            'score', 'scored', 'scoring', 'rating', 'rated', 'ranked', 'ranking',
+            'form', 'episode', 'ep', 'channel', 'track', 'gate', 'exit', 'room', 'floor', 'code',
+        ]);
+        if (decadeInhibitors.has(immPrecWord)) return match;
 
         //Detect era context - make sure it's not a BP
         const after = string.slice(offset, offset + match.length + 10);
@@ -1605,7 +1696,174 @@ const allTests = [
     { input: "400 cm", expected: "400 cm" },
     { input: "500 miles", expected: "500 miles" },
     { input: "200 lbs", expected: "200 lbs" },
-    { input: "400 volt", expected: "400 volt" }
+    { input: "400 volt", expected: "400 volt" },
+
+
+    // =====================================================================
+    // EDGE CASE SURVEY — False Positives & False Negatives
+    // Each bullet from the brainstorm gets 3 tests.
+    // =====================================================================
+
+    // --- FALSE POSITIVES: Non-Year Numbers That May Be Misidentified ---
+
+    // Version numbers
+    { input: "Python 3.11 is the latest version available", expected: "Python 3.11 is the latest version available" },
+    { input: "HTTP 2 is the new standard protocol", expected: "HTTP 2 is the new standard protocol" },
+    { input: "the server returned HTTP 404 not found", expected: "the server returned HTTP 404 not found" },
+
+    // Model / part numbers
+    { input: "The Boeing 747 flew overnight to London", expected: "The Boeing 747 flew overnight to London" },
+    { input: "Fires an AK-47 rifle in combat situations", expected: "Fires an AK-47 rifle in combat situations" },
+    { input: "B-52 bombers flew long-range strategic missions", expected: "B-52 bombers flew long-range strategic missions" },
+    { input: "Heckler & Koch 416 was a part", expected: "Heckler & Koch 416 was a part" },
+
+    // Highway / route numbers
+    { input: "Take Highway 101 south toward the city", expected: "Take Highway 101 south toward the city" },
+    { input: "Drive north on I-495 through Virginia today", expected: "Drive north on I-495 through Virginia today" },
+    { input: "Route 666 runs west to east across America", expected: "Route 666 runs west to east across America" },
+
+    // Patent or law numbers
+    { input: "Public Law 111 was signed into federal law", expected: "Public Law 111 was signed into federal law" },
+    { input: "Patent 1500 covers the described invention", expected: "Patent 1500 covers the described invention" },
+    { input: "See RFC number 2616 for the HTTP specification", expected: "See RFC number 2616 for the HTTP specification" },
+
+    // Port numbers
+    { input: "Listen on port 443 for incoming HTTPS traffic", expected: "Listen on port 443 for incoming HTTPS traffic" },
+    { input: "The server uses port 2080 by default", expected: "The server uses port 2080 by default" },
+    { input: "Allow incoming traffic on port 2222 remotely", expected: "Allow incoming traffic on port 2222 remotely" },
+
+    // RFC document numbers
+    { input: "Per RFC 2616, the response header must be present", expected: "Per RFC 2616, the response header must be present" },
+    { input: "RFC 1540 describes HTTP/2 binary framing format", expected: "RFC 1540 describes HTTP/2 binary framing format" },
+    { input: "RFC 1918 defines the private IP address ranges", expected: "RFC 1918 defines the private IP address ranges" },
+
+    // Frequency — Hz is in units (should pass), baud is not (may fail)
+    { input: "The signal runs at 2400 Hz continuously", expected: "The signal runs at 2400 Hz continuously" },
+    { input: "Old modems connected at 1200 baud over phone lines", expected: "Old modems connected at 1200 baud over phone lines" },
+    { input: "A 900 MHz processor ran consistently hot", expected: "A 900 MHz processor ran consistently hot" },
+
+    // Voltage / wattage — V, W, kW all in units (should all pass)
+    { input: "Plugged into a 240 V outlet in Europe", expected: "Plugged into a 240 V outlet in Europe" },
+    { input: "The space heater draws 1200 W of power", expected: "The space heater draws 1200 W of power" },
+    { input: "The turbine generates 1800 kW continuously", expected: "The turbine generates 1800 kW continuously" },
+
+    // Screen resolution — × symbol blocks word check for 1920 and 2560
+    { input: "the display runs at 1920×1080 pixels natively", expected: "the display runs at 1920×1080 pixels natively" },
+    { input: "scaled to 1440p on the external monitor", expected: "scaled to 1440p on the external monitor" },
+    { input: "the game renders at 2560×1440 at full detail", expected: "the game renders at 2560×1440 at full detail" },
+
+    // Caloric — calories is count noun, kcal/cal in units (should all pass)
+    { input: "consume 2000 calories each day for maintenance", expected: "consume 2000 calories each day for maintenance" },
+    { input: "the strict diet allows 1800 kcal per day", expected: "the strict diet allows 1800 kcal per day" },
+    { input: "he burned 1500 cal during the long run", expected: "he burned 1500 cal during the long run" },
+
+    // Altitude / depth — ft, m in units (should all pass)
+    { input: "the aircraft cruised at 1500 ft above the clouds", expected: "the aircraft cruised at 1500 ft above the clouds" },
+    { input: "the wreck lay at a depth of 700 m below", expected: "the wreck lay at a depth of 700 m below" },
+    { input: "the summit stands at 2800 m above sea level", expected: "the summit stands at 2800 m above sea level" },
+
+    // File sizes — kb, mb, gb all in units (should all pass)
+    { input: "uploaded a 1024 KB document to the server", expected: "uploaded a 1024 KB document to the server" },
+    { input: "the program needs 2048 MB of free RAM", expected: "the program needs 2048 MB of free RAM" },
+    { input: "the external drive holds 512 GB of data", expected: "the external drive holds 512 GB of data" },
+
+    // Credit / FICO scores — number has nothing or non-blocking word after it
+    { input: "a credit score of 750 was required for approval", expected: "a credit score of 750 was required for approval" },
+    { input: "his FICO score of 800 got him approved immediately", expected: "his FICO score of 800 got him approved immediately" },
+    { input: "the IQ test returned a result of 135 points", expected: "the IQ test returned a result of 135 points" },
+
+    // IQ / standardized test scores
+    { input: "scored 1400 on the SAT college entrance exam", expected: "scored 1400 on the SAT college entrance exam" },
+    { input: "a perfect ACT score of 1600 was unheard of", expected: "a perfect ACT score of 1600 was unheard of" },
+    { input: "she improved her credit rating to 780 over time", expected: "she improved her credit rating to 780 over time" },
+
+    // HTTP status codes — "error" BEFORE number is not caught; "error" AFTER IS caught
+    { input: "error 404 was returned by the web server", expected: "error 404 was returned by the web server" },
+    { input: "HTTP status 200 OK response was received", expected: "HTTP status 200 OK response was received" },
+    { input: "got a 500 error back from the API endpoint", expected: "got a 500 error back from the API endpoint" },
+
+    // Zip / postal codes — 5-digit US zips >3000 pass; 4-digit Australian codes may fail
+    { input: "zip code 94107 is in San Francisco California", expected: "zip code 94107 is in San Francisco California" },
+    { input: "postal code 10001 serves midtown New York City", expected: "postal code 10001 serves midtown New York City" },
+    { input: "postal code 2000 covers central Sydney Australia", expected: "postal code 2000 covers central Sydney Australia" },
+
+    // Biblical / legal citations — colon blocks verse; "of" check saves article refs
+    { input: "as stated in Genesis 101:101 of the scripture text", expected: "as stated in Genesis 101:101 of the scripture text" },
+    { input: "Section 1983 allows civil rights lawsuits in court", expected: "Section 1983 allows civil rights lawsuits in court" },
+    { input: "Article 1776 of the legal code clearly applies here", expected: "Article 1776 of the legal code clearly applies here" },
+
+    // Page numbers — "page" precedes number so the word-after check doesn't help
+    { input: "see page 247 for the full discussion below", expected: "see page 247 for the full discussion below" },
+    { input: "turn to page 1066 for the bibliography section", expected: "turn to page 1066 for the bibliography section" },
+    { input: "referenced on p. 247 in the appendix index", expected: "referenced on p. 247 in the appendix index" },
+
+    // Atmospheric pressure — mbar/mmHg in units; hPa is NOT in units
+    { input: "barometric pressure is 1013 hPa at sea level", expected: "barometric pressure is 1013 hPa at sea level" },
+    { input: "standard pressure of 1013 mbar was measured today", expected: "standard pressure of 1013 mbar was measured today" },
+    { input: "a barometric reading of 760 mmHg was recorded", expected: "a barometric reading of 760 mmHg was recorded" },
+
+    // RPM — rpm in units (should all pass)
+    { input: "engine idles steadily at 1800 RPM when fully warm", expected: "engine idles steadily at 1800 RPM when fully warm" },
+    { input: "running at 2400 rpm under maximum continuous load", expected: "running at 2400 rpm under maximum continuous load" },
+    { input: "idle speed is 800 rpm when the car is in neutral", expected: "idle speed is 800 rpm when the car is in neutral" },
+
+
+    // --- FALSE NEGATIVES: Real Year References That May Not Be Caught ---
+
+    // Treaty / agreement years in parentheses — single years should convert; ranges may not
+    { input: "The Treaty of Westphalia (1648) ended the Thirty Years War", expected: "The Treaty of Westphalia (11648 H.E. (Holocene Era) [converted from 1648 CE]) ended the Thirty Years War" },
+    { input: "Napoleon Bonaparte (1769–1821) was a French general", expected: "Napoleon Bonaparte (11769 H.E. (Holocene Era) [converted from 1769 CE]–11821 H.E. (Holocene Era) [converted from 1821 CE]) was a French general" },
+    { input: "[1492] Columbus arrived in the Americas that year", expected: "[11492 H.E. (Holocene Era) [converted from 1492 CE]] Columbus arrived in the Americas that year" },
+
+    // Election years — "election" is not in strongIndicators
+    { input: "the 1860 election was pivotal in American history", expected: "the 11860 H.E. (Holocene Era) [converted from 1860 CE] election was pivotal in American history" },
+    { input: "the election of 1800 was hotly contested in America", expected: "the election of 11800 H.E. (Holocene Era) [converted from 1800 CE] was hotly contested in America" },
+    { input: "1860 election results were disputed by many people", expected: "11860 H.E. (Holocene Era) [converted from 1860 CE] election results were disputed by many people" },
+
+    // "Year" as a word — already a strong indicator, these should all pass
+    { input: "the year 1453 marked the fall of Constantinople", expected: "the year 11453 H.E. (Holocene Era) [converted from 1453 CE] marked the fall of Constantinople" },
+    { input: "in the year 1066 William conquered all of England", expected: "in the year 11066 H.E. (Holocene Era) [converted from 1066 CE] William conquered all of England" },
+    { input: "that year, 1066, changed the course of history", expected: "that year, 11066 H.E. (Holocene Era) [converted from 1066 CE], changed the course of history" },
+
+    // Fiscal / quarter notation — count nouns like "earnings" and "results" may block
+    { input: "Q3 2024 earnings report disappointed analysts badly", expected: "Q3 12024 H.E. (Holocene Era) [converted from 2024 CE] earnings report disappointed analysts badly" },
+    { input: "H1 2023 results showed strong revenue growth overall", expected: "H1 12023 H.E. (Holocene Era) [converted from 2023 CE] results showed strong revenue growth overall" },
+    { input: "FY2025 budget projections are overly optimistic now", expected: "FY12025 H.E. (Holocene Era) [converted from 2025 CE] budget projections are overly optimistic now" },
+
+    // Publication / copyright years
+    { input: "published in 1859, Darwin described natural selection", expected: "published in 11859 H.E. (Holocene Era) [converted from 1859 CE], Darwin described natural selection" },
+    { input: "© 1997 All rights reserved worldwide by the author", expected: "© 11997 H.E. (Holocene Era) [converted from 1997 CE] All rights reserved worldwide by the author" },
+    { input: "printed in 2003, the book quickly became popular", expected: "printed in 12003 H.E. (Holocene Era) [converted from 2003 CE], the book quickly became popular" },
+
+    // Named events — event nouns (earthquake, pandemic, landing) not in strongIndicators
+    { input: "the 1906 earthquake struck and devastated San Francisco", expected: "the 11906 H.E. (Holocene Era) [converted from 1906 CE] earthquake struck and devastated San Francisco" },
+    { input: "the 1918 pandemic killed millions of people worldwide", expected: "the 11918 H.E. (Holocene Era) [converted from 1918 CE] pandemic killed millions of people worldwide" },
+    { input: "the 1969 moon landing was broadcast live globally", expected: "the 11969 H.E. (Holocene Era) [converted from 1969 CE] moon landing was broadcast live globally" },
+
+    // Years followed by non-era acronyms (VE, USA, NATO) — should still convert
+    { input: "1945 VE Day marked the end of war in Europe", expected: "11945 H.E. (Holocene Era) [converted from 1945 CE] VE Day marked the end of war in Europe" },
+    { input: "1776 USA declared independence from the British crown", expected: "11776 H.E. (Holocene Era) [converted from 1776 CE] USA declared independence from the British crown" },
+    { input: "post-1945 NATO was established for collective defense", expected: "post-11945 H.E. (Holocene Era) [converted from 1945 CE] NATO was established for collective defense" },
+
+    // Pre- / post- prefixed years
+    { input: "pre-1914 Europe was relatively stable and prosperous", expected: "pre-11914 H.E. (Holocene Era) [converted from 1914 CE] Europe was relatively stable and prosperous" },
+    { input: "post-1945 reconstruction began across all of Europe", expected: "post-11945 H.E. (Holocene Era) [converted from 1945 CE] reconstruction began across all of Europe" },
+    //{ input: "mid-1800s-era settlements were common across the west", expected: "mid-11800s H.E. (Holocene Era) [converted from 1800s CE]-era settlements were common across the west" },
+
+    // Parenthetical and bracketed single years
+    { input: "The Magna Carta (1215) was signed at Runnymede England", expected: "The Magna Carta (11215 H.E. (Holocene Era) [converted from 1215 CE]) was signed at Runnymede England" },
+    { input: "[1066] William conquered England at the Battle of Hastings", expected: "[11066 H.E. (Holocene Era) [converted from 1066 CE]] William conquered England at the Battle of Hastings" },
+    { input: "The Battle of Hastings [1066] transformed medieval Britain", expected: "The Battle of Hastings [11066 H.E. (Holocene Era) [converted from 1066 CE]] transformed medieval Britain" },
+
+    // Financial event years — crash, crisis, rally not in strongIndicators
+    { input: "the 1929 crash wiped out countless personal fortunes", expected: "the 11929 H.E. (Holocene Era) [converted from 1929 CE] crash wiped out countless personal fortunes" },
+    { input: "the 2008 crisis hit global markets especially hard", expected: "the 12008 H.E. (Holocene Era) [converted from 2008 CE] crisis hit global markets especially hard" },
+    { input: "the 1987 stock market rally quickly reversed course", expected: "the 11987 H.E. (Holocene Era) [converted from 1987 CE] stock market rally quickly reversed course" },
+
+    // Year as adjective for events — festival, boycott, embargo not in strongIndicators
+    { input: "the 1969 Woodstock festival drew enormous enthusiastic crowds", expected: "the 11969 H.E. (Holocene Era) [converted from 1969 CE] Woodstock festival drew enormous enthusiastic crowds" },
+    { input: "the 1980 Olympics boycott angered many dedicated athletes", expected: "the 11980 H.E. (Holocene Era) [converted from 1980 CE] Olympics boycott angered many dedicated athletes" },
+    { input: "the 1973 oil embargo shocked Western economies deeply", expected: "the 11973 H.E. (Holocene Era) [converted from 1973 CE] oil embargo shocked Western economies deeply" }
 
 
 ];
