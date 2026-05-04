@@ -520,6 +520,14 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         "rpm", "mph", "kph", "kt", "psi", "btu",
         "cal", "kcal", "db", "lm", "lx",
         "ppm", "ppb",
+        // Power / electrical mode
+        "hp", "bhp", "ac", "dc",
+        // Rate abbreviations
+        "bpm", "mpg",
+        // Ordinal suffixes (400th, 1200th, etc.)
+        "st", "nd", "rd", "th",
+        // Medical
+        "mcg", "iu",
         // Currency codes (ISO 4217 + common crypto)
         "usd", "eur", "gbp", "jpy", "chf", "cad", "aud", "nzd", "cny", "inr",
         "brl", "mxn", "krw", "sgd", "hkd", "nok", "sek", "dkk", "rub", "try",
@@ -560,6 +568,38 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         "lumen", "lux",
         // Other
         "kilocalorie", "calorie", "mole", "decibel", "radian", "knot",
+        "degree", "gauge", "proof", "karat", "carat", "horsepower",
+        // Temporal duration (singular — "400 year reign", "400 year period")
+        "year", "fold",
+        // Quantifying adjectives ("400 strong", "400 odd")
+        "strong", "odd",
+        // Singular count-noun modifiers ("400 page book", "400 piece set")
+        "page", "piece", "person", "part",
+        // Measurement geometry modifiers ("400 square meters", "400 cubic feet")
+        "square", "cubic", "linear", "metric", "imperial",
+        "rectangular", "circular", "spherical", "cylindrical", "triangular",
+        // Quantity (gross = 144 units, point = finance/sports)
+        "gross", "point",
+        // Capacity / venue ("400 seat theater", "400 bed hospital", "400 room hotel")
+        "seat", "room", "bed", "floor", "unit", "slot", "space", "spot", "suite", "berth",
+        // Text / document ("400 word essay", "400 page chapter")
+        "word", "line", "chapter", "volume", "paragraph", "sentence",
+        // Data / computing ("400 row table", "400 node cluster")
+        "row", "entry", "record", "field", "file", "node", "link", "edge", "error", "packet",
+        // Political / organizational ("400 vote margin", "400 member panel")
+        "vote", "member", "delegate", "representative", "deputy",
+        // Sports ("400 goal season", "400 game streak")
+        "goal", "game", "round", "match", "win", "loss", "lap", "set",
+        // Military / historical ("400 soldier garrison", "400 ship fleet")
+        "soldier", "troop", "warrior", "vessel", "ship", "plane", "tank", "cannon", "knight",
+        // Scientific ("400 sample study", "400 patient trial")
+        "sample", "specimen", "subject", "patient", "case", "trial", "observation",
+        "gene", "cell", "species", "strain",
+        // Financial / real estate ("400 share block", "400 home development")
+        "share", "bond", "lot", "job", "home", "house", "apartment",
+        // General structure ("400 step process", "400 layer stack")
+        "step", "stage", "phase", "level", "tier", "layer", "block",
+        "section", "segment", "module", "component", "element", "factor", "version", "edition",
         // Currency names
         "dollar", "euro", "yen", "franc", "ruble", "rupee", "yuan", "dinar", "dirham", "peso"
     ];
@@ -577,12 +617,15 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         return false;
     };
 
+    const temporalBefore = /\b(?:year|century|decade|era|period|age)\b/.test(before);
+
     const nearbyMatch = after.match(/^\s*([a-z]+)(?:\s+([a-z]+))?/);
     if (nearbyMatch) {
         const [, word1, word2] = nearbyMatch;
         if (isCountNoun(word1)) return false;
         if (units.includes(word1)) return false;
         if (singularUnits.includes(word1)) return false;
+        if (word1 === "of" && !temporalBefore) return false;
         // Look past a single adjective/modifier (ends in -ing, -ed, -ly) to the next word
         if (/(?:ing|ed|ly)$/.test(word1) && isCountNoun(word2)) return false;
         if (adjectivesEndingInS.includes(word1) && isCountNoun(word2)) return false;
@@ -1552,7 +1595,10 @@ const allTests = [
     { input: "4 dozen", expected: "4 dozen" },
     { input: "6 per day", expected: "6 per day" },
     { input: "6 hour train ride", expected: "6 hour train ride" },
-
+    { input: "1000 fold, 1000 person, 1000 strong, 1000 odd, 1000 year gap, 1000th, 1001st, 1002nd, 1003rd, 1000 page book, 1000 horsepower, 1000 gauge, 1000 carat, 1000 degree heat", expected: "1000 fold, 1000 person, 1000 strong, 1000 odd, 1000 year gap, 1000th, 1001st, 1002nd, 1003rd, 1000 page book, 1000 horsepower, 1000 gauge, 1000 carat, 1000 degree heat" },
+    { input: "4000 of the soldiers", expected: "4000 of the soldiers" },
+    { input: "year 900 of the Republic", expected: "year 10900 H.E. (Holocene Era) [converted from 900 CE] of the Republic" },
+    { input: "In the year of our Lord 1503, we set sail", expected: "In the year of our Lord 11503 H.E. (Holocene Era) [converted from 1503 CE], we set sail" },
 
     // --- UNITS ---
     { input: "400 V", expected: "400 V" },
