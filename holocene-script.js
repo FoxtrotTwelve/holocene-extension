@@ -260,6 +260,11 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     if (nodeValue[index - 1] && /\d/.test(nodeValue[index - 1])) return false;
     if (nodeValue[index + match.length] && /\d/.test(nodeValue[index + match.length])) return false;
 
+    //Avoid currency symbols immediately before ($100, €100, £100, etc.)
+    if ("$€£¥₹₩₽฿₺₦₫₱¢₴₿".includes(nodeValue[index - 1])) return false;
+    //Avoid percent sign immediately after (100%)
+    if (nodeValue[index + match.length] === "%") return false;
+
     // Get sentence-bounded context windows (same approach as isLikelyYearRange)
     const rawBefore = nodeValue.slice(Math.max(0, index - 60), index);
     const rawAfter  = nodeValue.slice(index + match.length,
@@ -514,7 +519,49 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         // Other common
         "rpm", "mph", "kph", "kt", "psi", "btu",
         "cal", "kcal", "db", "lm", "lx",
-        "ppm", "ppb"
+        "ppm", "ppb",
+        // Currency codes (ISO 4217 + common crypto)
+        "usd", "eur", "gbp", "jpy", "chf", "cad", "aud", "nzd", "cny", "inr",
+        "brl", "mxn", "krw", "sgd", "hkd", "nok", "sek", "dkk", "rub", "try",
+        "zar", "pln", "huf", "czk", "aed", "sar", "cop", "ars", "clp", "pen",
+        "egp", "ngn", "pkr", "vnd", "thb", "myr", "idr", "php", "btc", "eth", "xrp",
+        // Percentage
+        "percent", "pct",
+        // Rate indicator
+        "per",
+        // Multipliers
+        "dozen", "score", "hundred", "thousand", "million", "billion", "trillion"
+    ];
+
+    const singularUnits = [
+        // Length
+        "meter", "kilometer", "centimeter", "millimeter", "nanometer", "foot", "yard", "mile", "inch",
+        // Mass
+        "gram", "kilogram", "milligram", "microgram", "pound", "ounce", "tonne", "ton", "megaton",
+        // Time
+        "second", "minute", "hour", "day", "week", "month",
+        // Electrical / energy
+        "volt", "kilowatt", "megawatt", "gigawatt", "watt", "ampere", "ohm",
+        "joule", "kilojoule", "newton", "hertz", "kilohertz", "megahertz", "gigahertz",
+        "pascal", "farad", "kelvin",
+        // Volume
+        "liter", "milliliter", "gallon", "quart", "pint",
+        // Temperature
+        "celsius", "fahrenheit",
+        // Area
+        "hectare", "acre",
+        // Computing
+        "kilobyte", "megabyte", "gigabyte", "terabyte", "petabyte", "megapixel",
+        // Pressure / atmosphere
+        "atmosphere", "millibar",
+        // Physics
+        "electronvolt", "sievert", "becquerel",
+        // Light
+        "lumen", "lux",
+        // Other
+        "kilocalorie", "calorie", "mole", "decibel", "radian", "knot",
+        // Currency names
+        "dollar", "euro", "yen", "franc", "ruble", "rupee", "yuan", "dinar", "dirham", "peso"
     ];
 
     const isCountNoun = w => {
@@ -535,6 +582,7 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         const [, word1, word2] = nearbyMatch;
         if (isCountNoun(word1)) return false;
         if (units.includes(word1)) return false;
+        if (singularUnits.includes(word1)) return false;
         // Look past a single adjective/modifier (ends in -ing, -ed, -ly) to the next word
         if (/(?:ing|ed|ly)$/.test(word1) && isCountNoun(word2)) return false;
         if (adjectivesEndingInS.includes(word1) && isCountNoun(word2)) return false;
@@ -1494,13 +1542,24 @@ const allTests = [
     { input: "In the 1980s-90s various things...", expected: "In the 11980s–90s H.E. (Holocene Era) [converted from 1980s-90s CE] various things..." },
     { input: "The first hundred is rough.", expected: "The first hundred is rough." },
     { input: "I have around 2.", expected: "I have around 2." },
+    { input: "400 USD", expected: "400 USD" },
+    { input: "2000USD", expected: "2000USD" },
+    { input: "100 EUR", expected: "100 EUR" },
+    { input: "$100", expected: "$100" },
+    { input: "100 percent", expected: "100 percent" },
+    { input: "100%", expected: "100%" },
+    { input: "80 pct", expected: "80 pct" },
+    { input: "4 dozen", expected: "4 dozen" },
+    { input: "6 per day", expected: "6 per day" },
+    { input: "6 hour train ride", expected: "6 hour train ride" },
 
 
     // --- UNITS ---
     { input: "400 V", expected: "400 V" },
     { input: "400 cm", expected: "400 cm" },
     { input: "500 miles", expected: "500 miles" },
-    { input: "200 lbs", expected: "200 lbs" }
+    { input: "200 lbs", expected: "200 lbs" },
+    { input: "400 volt", expected: "400 volt" }
 
 
 ];
