@@ -310,7 +310,83 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         "is", "was", "has", "does", "goes", "says", "comes",
         "seems", "appears", "means", "remains", "starts", "begins", "ends",
         "takes", "makes", "gives", "gets", "becomes", "proves", "shows",
-        "includes", "contains", "runs", "leads", "marks", "occurs", "follows"
+        "includes", "contains", "runs", "leads", "marks", "occurs", "follows",
+        // Common perception / cognition
+        "sees", "feels", "knows", "thinks", "hears", "believes", "notices",
+        // Common action
+        "uses", "needs", "wants", "keeps", "puts", "turns", "calls", "moves",
+        "works", "finds", "tells", "helps", "holds", "plays", "reads", "writes",
+        "lives", "stands", "looks", "lets", "sets", "brings", "leaves", "sends",
+        "wins", "adds", "builds", "opens", "closes", "breaks", "grows", "pays",
+        "asks", "sits", "cuts", "hits", "buys", "changes",
+        // Common formal / technical
+        "creates", "provides", "requires", "allows", "expects", "suggests",
+        "returns", "produces", "applies", "defines", "describes",
+        // State / existence
+        "exists", "concerns", "matters", "happens", "differs", "relates",
+        // Cognition / communication
+        "imagines", "assumes", "argues", "mentions", "declares", "compares",
+        "refers", "prefers", "listens", "acknowledges", "recommends", "announces",
+        // Emotion / social
+        "loves", "cares", "shares", "deserves", "engages", "challenges", "encourages",
+        // Change / process
+        "combines", "determines", "examines", "evolves", "resolves", "reduces",
+        "introduces", "improves", "removes", "approves", "advances", "expands",
+        "extends", "replaces", "converts", "enhances", "continues", "involves",
+        // Motion / physical
+        "drives", "carries", "flies", "falls", "rises", "guides", "wears",
+        "raises", "dies", "tries",
+        // Interaction / general action
+        "covers", "discovers", "offers", "serves", "saves", "spends", "attends",
+        "tends", "responds", "manages", "fixes", "mixes", "depends", "intends",
+        "defends", "pretends", "prepares", "handles", "feeds", "gathers",
+        // Result / achievement
+        "succeeds", "proceeds", "receives", "achieves", "supports", "connects",
+        "protects", "affects", "reflects", "selects", "collects", "directs",
+        "detects", "corrects", "counts", "reports", "observes",
+        // Other common
+        "survives", "earns", "learns", "solves", "exchanges", "arranges",
+        "traces", "causes", "decides"
+    ];
+    const adjectivesEndingInS = [
+        // -ous adjectives
+        "ambitious", "analogous", "anonymous", "anxious", "atrocious", "audacious", "auspicious",
+        "boisterous", "callous", "capricious", "carnivorous", "cautious", "ceremonious",
+        "conspicuous", "contagious", "contentious", "continuous", "copious", "courageous",
+        "courteous", "credulous", "curious", "dangerous", "dexterous", "dubious", "egregious",
+        "enormous", "erroneous", "fabulous", "facetious", "fallacious", "famous", "ferocious",
+        "fictitious", "furious", "garrulous", "generous", "glorious", "gorgeous", "gracious",
+        "gratuitous", "gregarious", "grievous", "harmonious", "hazardous", "heinous", "hideous",
+        "hilarious", "humongous", "humorous", "ignominious", "illustrious", "impervious",
+        "indigenous", "industrious", "infamous", "ingenious", "injurious", "innocuous",
+        "instantaneous", "jealous", "joyous", "laborious", "ludicrous", "luminous", "luxurious",
+        "malicious", "marvelous", "melodious", "meticulous", "miraculous", "miscellaneous",
+        "mischievous", "monotonous", "monstrous", "murderous", "mysterious", "nauseous",
+        "nefarious", "nervous", "notorious", "noxious", "numerous", "oblivious", "obvious",
+        "odious", "ominous", "omnivorous", "outrageous", "pernicious", "pious", "piteous",
+        "pompous", "populous", "portentous", "precious", "preposterous", "prestigious",
+        "previous", "prodigious", "promiscuous", "prosperous", "raucous", "rebellious",
+        "religious", "ridiculous", "rigorous", "righteous", "ruinous", "scandalous",
+        "scrupulous", "sensuous", "serious", "simultaneous", "sinuous", "specious",
+        "spontaneous", "spurious", "strenuous", "studious", "sumptuous", "synonymous",
+        "tempestuous", "tenacious", "treacherous", "tumultuous", "ubiquitous", "unanimous",
+        "unconscious", "unctuous", "various", "venomous", "vicious", "virtuous", "vivacious",
+        "vociferous", "zealous",
+        // -less adjectives
+        "aimless", "artless", "baseless", "blameless", "breathless", "careless", "ceaseless",
+        "childless", "clueless", "cloudless", "countless", "dauntless", "defenseless",
+        "effortless", "endless", "expressionless", "faultless", "fearless", "flawless",
+        "formless", "groundless", "guiltless", "guileless", "hapless", "harmless", "heartless",
+        "helpless", "homeless", "hopeless", "humorless", "jobless", "lawless", "lifeless",
+        "limitless", "listless", "loveless", "matchless", "meaningless", "merciless", "mindless",
+        "motionless", "nameless", "needless", "noiseless", "painless", "peerless", "pitiless",
+        "pointless", "powerless", "purposeless", "reckless", "regardless", "relentless",
+        "remorseless", "restless", "ruthless", "seamless", "senseless", "shameless", "shapeless",
+        "sleepless", "speechless", "spineless", "spotless", "stainless", "stateless", "tasteless",
+        "thankless", "thoughtless", "timeless", "trackless", "useless", "voiceless", "weightless",
+        "wireless", "witless", "worthless",
+        // ordinal-style and other adjectives ending in s
+        "bogus", "express", "gross", "surplus", "plus", "minus"
     ];
     const irregularPlurals = [
         // Original
@@ -410,6 +486,37 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         "illuminati", "literati", "cognoscenti"
     ];
 
+    const units = [
+        // Length
+        "m", "km", "cm", "mm", "nm", "pm", "um", "dm", "mi", "ft", "yd", "au",
+        // Mass / weight
+        "kg", "g", "mg", "ug", "ng", "lb", "oz", "t", "ton",
+        // Time (ms/s already caught by count noun check)
+        "min", "hr", "h", "wk", "mo",
+        // Electrical / energy
+        "v", "kv", "mv", "w", "kw", "mw", "gw",
+        "j", "kj", "mj", "wh", "kwh", "mwh", "gwh",
+        "n", "kn", "pa", "kpa", "mpa", "gpa",
+        "hz", "khz", "mhz", "ghz", "thz",
+        "ma", "ah", "nf", "pf", "uf", "mh",
+        // Volume
+        "l", "ml", "dl", "cl", "cc", "qt", "gal",
+        // Temperature
+        "k", "c", "f",
+        // Area
+        "ha",
+        // Computing / data
+        "kb", "mb", "gb", "tb", "pb", "bps", "kbps", "mbps", "gbps",
+        "bit", "byte", "mp", "dpi",
+        // Physics / science
+        "ev", "kev", "mev", "gev", "mol", "sr", "bq", "sv",
+        "rad", "bar", "mbar", "torr", "mmhg", "atm",
+        // Other common
+        "rpm", "mph", "kph", "kt", "psi", "btu",
+        "cal", "kcal", "db", "lm", "lx",
+        "ppm", "ppb"
+    ];
+
     const isCountNoun = w => {
         if (!w) return false;
         if (irregularPlurals.includes(w)) return true;
@@ -418,7 +525,7 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
                 const escaped = ind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 return new RegExp(`^${escaped}$`, 'i').test(w);
             });
-            return !isTemporalWord && !verbsEndingInS.includes(w);
+            return !isTemporalWord && !verbsEndingInS.includes(w) && !adjectivesEndingInS.includes(w);
         }
         return false;
     };
@@ -427,8 +534,10 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     if (nearbyMatch) {
         const [, word1, word2] = nearbyMatch;
         if (isCountNoun(word1)) return false;
+        if (units.includes(word1)) return false;
         // Look past a single adjective/modifier (ends in -ing, -ed, -ly) to the next word
         if (/(?:ing|ed|ly)$/.test(word1) && isCountNoun(word2)) return false;
+        if (adjectivesEndingInS.includes(word1) && isCountNoun(word2)) return false;
     }
 
     return true;
@@ -934,8 +1043,7 @@ function processDecadeAbbreviatedRanges(text) {
         const hasSSecond = /s$/.test(second);
 
         //Doesn't convert abbreviated second year (i.e. 2 digits) - appends second year onto end of result as is
-        const separator = match.includes("–") ? "–" : "-";
-        result += separator + second;
+        result += "–" + second;
 
         console.log("Processed in ABBREVIATED DECADES");
         return `${result} H.E. (Holocene Era) [converted from ${match} ${era}]`;
@@ -1283,7 +1391,7 @@ const allTests = [
     { input: "the 1990s", expected: "the 11990s H.E. (Holocene Era) [converted from 1990s CE]" },
     { input: "1980s–1990s", expected: "11980s–11990s H.E. (Holocene Era) [converted from 1980s–1990s CE]" },
     { input: "1980s–90s", expected: "11980s–90s H.E. (Holocene Era) [converted from 1980s–90s CE]" },
-    { input: "1980-90", expected: "11980-90 H.E. (Holocene Era) [converted from 1980-90 CE]" },
+    { input: "1980-90", expected: "11980–90 H.E. (Holocene Era) [converted from 1980-90 CE]" },
 
     // --- LONG AND COMPLICATED ---
     { input: "The 1980s–1990s in the late 20th century saw the birth of Jared who was born in 1991. If he was born in 100 AD or 100 B.C.E., he would have been born in a different year. But he was born in the 1900s, or rather the nineteen hundreds and not the next millennia. His lifespan is 1991-2010, and his son was born c. 2000 CE.", expected: "The 11980s–11990s H.E. (Holocene Era) [converted from 1980s–1990s CE] in the late 11900s H.E. (Holocene Era) [converted from 20th century] saw the birth of Jared who was born in 11991 H.E. (Holocene Era) [converted from 1991 CE]. If he was born in 10100 H.E. (Holocene Era) [converted from 100 CE] or 9901 H.E. (Holocene Era) [converted from 100 BCE], he would have been born in a different year. But he was born in the 11900s H.E. (Holocene Era) [converted from 1900s CE], or rather the 11900s H.E. (Holocene Era) [converted from 1900 CE] and not the next millennia. His lifespan is 11991–12010 H.E. (Holocene Era) [converted from 1991–2010 CE], and his son was born c. 12000 H.E. (Holocene Era) [converted from 2000 CE]." },
@@ -1373,7 +1481,27 @@ const allTests = [
     { input: "1200 was the best", expected: "11200 H.E. (Holocene Era) [converted from 1200 CE] was the best" },
     { input: "300 is thought to be the fall of Rome", expected: "10300 H.E. (Holocene Era) [converted from 300 CE] is thought to be the fall of Rome" },
     { input: "1200 men manned the ship in the assault on Paris in 1200.", expected: "1200 men manned the ship in the assault on Paris in 11200 H.E. (Holocene Era) [converted from 1200 CE]." },
-    { input: "600 running mice finished the race in 1999.", expected: "600 running mice finished the race in 11999 H.E. (Holocene Era) [converted from 1999 CE]." }
+    { input: "600 running mice finished the race in 1999.", expected: "600 running mice finished the race in 11999 H.E. (Holocene Era) [converted from 1999 CE]." },
+    { input: "1200 various artifacts.", expected: "1200 various artifacts." },
+    { input: "1200 soldiers", expected: "1200 soldiers" },
+    { input: "I have 1 apple.", expected: "I have 1 apple." },
+    { input: "I have 0 influence.", expected: "I have 0 influence." },
+    { input: "I am 44 years old.", expected: "I am 44 years old." },
+    { input: "I have 30 copious pumpkins.", expected: "I have 30 copious pumpkins." },
+
+
+    // --- NEXT ROUND TO TRICK IT ---
+    { input: "In the 1980s-90s various things...", expected: "In the 11980s–90s H.E. (Holocene Era) [converted from 1980s-90s CE] various things..." },
+    { input: "The first hundred is rough.", expected: "The first hundred is rough." },
+    { input: "I have around 2.", expected: "I have around 2." },
+
+
+    // --- UNITS ---
+    { input: "400 V", expected: "400 V" },
+    { input: "400 cm", expected: "400 cm" },
+    { input: "500 miles", expected: "500 miles" },
+    { input: "200 lbs", expected: "200 lbs" }
+
 
 ];
 
