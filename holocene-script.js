@@ -45,7 +45,7 @@ const yearRegex = new RegExp(
   `(\\d{1,3}(?:,\\d{3})*|\\d{1,6})` + // group 3: year
   //`(?:\\s*(${ERA_PATTERN}))\\b`,       // group 4: suffix era
   //`\\s*(${ERA_PATTERN})(?=\\b|[^a-zA-Z])`,
-  `\\s*(${ERA_PATTERN})(\\.)?`,           // group 4: suffix era, group 5: trailing period
+  `\\s*(${ERA_PATTERN})(?![a-zA-Z])(\\.)?`,  // group 4: suffix era, group 5: trailing period
   "gi"
 );
 
@@ -89,7 +89,7 @@ const centuryRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?(\\d+)(st|nd|rd|th)\\s+century(?:\\s+(${ERA_PATTERN}))?(\\s*)`,
   "gi"
 );
-console.log("UPDATED CENTURY REGEX ACTIVE");
+//console.log("UPDATED CENTURY REGEX ACTIVE");
 
 //Regex for Plural references (e.g., "1800s BCE"):
 //const pluralRegex = /\b(\d{1,4})s(?!\s*H\.E\.)\s*(${ERA_PATTERN})?\b/gi;
@@ -267,6 +267,8 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     // Multiplication sign — dimension/resolution patterns (1920×1080)
     if (nodeValue[index + match.length] === '×') return false;
     if (nodeValue[index - 1] === '×') return false;
+    // Decimal point immediately before — calibers (.308), batting averages (.300)
+    if (nodeValue[index - 1] === '.') return false;
 
     // Get sentence-bounded context windows (same approach as isLikelyYearRange)
     const rawBefore = nodeValue.slice(Math.max(0, index - 60), index);
@@ -289,6 +291,130 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
 
     // Single-letter designator + hyphen prefix (I-495, A-320, etc.)
     if (/\b[A-Za-z]-$/.test(rawBefore)) return false;
+
+    // Inhibitor checks — run BEFORE strongIndicators so that a brand name or catalog
+    // label before the number always wins, even when temporal words appear in the sentence
+    // (e.g. "Symphony No. 1066 was discovered" — "discovered" is a strong indicator but
+    // "No." should still block conversion).
+    const immPrecMatch = before.match(/\b([a-z.']+(?:-[a-z.']+)*)\s*$/);
+    const immPrecWord = immPrecMatch ? immPrecMatch[1] : '';
+
+    // Words immediately before the number that mark it as a non-year identifier
+    const precedingInhibitors = new Set([
+        // Road / transportation
+        'highway', 'hwy', 'route', 'rte', 'freeway', 'expressway', 'interstate',
+        // Network / tech standards
+        'port', 'rfc', 'isbn', 'issn', 'sku',
+        // Legal / administrative
+        'patent', 'law', 'ordinance', 'statute', 'regulation',
+        // HTTP / error codes
+        'http', 'error', 'status',
+        // Document references
+        'page', 'p.', 'figure', 'fig', 'exhibit', 'appendix', 'chapter', 'article', 'section', 'number',
+        // Score / rating context
+        'score', 'scored', 'scoring', 'rating', 'rated', 'ranked', 'ranking',
+        // Misc designators
+        'form', 'episode', 'ep', 'channel', 'track', 'gate', 'exit', 'room', 'floor', 'code',
+        // Aviation / military operations
+        'flight', 'mission',
+        // Musical catalog / opus numbers (Op. 131, BWV 1045, No. 131)
+        'op.', 'opus', 'no.', 'bwv', 'hob.',
+        // Location / contact designators
+        'suite', 'unit', 'ext.', 'extension', 'zip', 'postcode',
+    ]);
+    if (precedingInhibitors.has(immPrecWord)) return false;
+
+    // Brand/company names that precede model or product numbers, not years.
+    // For multi-word brands (e.g. "Heckler & Koch 416"), add the last token that
+    // directly precedes the number. The immPrecWord regex captures hyphens and
+    // apostrophes, so "Can-Am", "Ski-Doo", "Sea-Doo", and "Levi's" work directly.
+    // Space-separated brands whose last word is too generic ("Sea Ray", "Arctic Cat")
+    // are handled by the brandPhrases two-word check below.
+    const brandNames = new Set([
+        // Automobiles — European sports / exotic
+        'porsche', 'ferrari', 'lamborghini', 'maserati', 'bugatti',
+        'mclaren', 'shelby',
+        // Automobiles — European mainstream
+        'fiat', 'alfa', 'romeo',     // Alfa Romeo: last word before number is "romeo"
+        'lancia', 'audi', 'bmw', 'mercedes', 'benz', 'daimler',
+        'volvo', 'saab', 'peugeot',
+        // Automobiles — British / classic
+        'jaguar', 'rover', 'cord', 'delorean', 'packard', 'nash',
+        'healey',                    // Austin-Healey: last word is "healey"
+        // Automobiles — American
+        'ford', 'chevrolet', 'chrysler', 'ram', 'lincoln',
+        'buick', 'oldsmobile', 'dodge', 'pontiac', 'plymouth',
+        'amc', 'studebaker', 'hudson',
+        // Automobiles — Asian
+        'honda', 'toyota', 'nissan', 'mitsubishi', 'mazda', 'subaru',
+        // Marine — outboard motors / boats
+        'evinrude', 'mercury',
+        'whaler',                    // Boston Whaler: last word is "whaler"
+        // Commercial Vehicles
+        'peterbilt', 'kenworth', 'freightliner', 'scania',
+        // Heavy Equipment / Agricultural
+        'deere',                     // John Deere: last word is "deere"
+        'massey', 'ferguson',        // Massey Ferguson
+        'caterpillar', 'komatsu', 'hanomag', 'panhard',
+        'kubota', 'fendt', 'claas', 'deutz', 'terex', 'hitachi',
+        // Aircraft
+        'boeing', 'airbus', 'embraer', 'bombardier', 'cessna', 'beechcraft',
+        'piper', 'gulfstream', 'learjet', 'sikorsky', 'fokker',
+        'mirage',                    // Dassault Mirage
+        'bell',                      // Bell Helicopter
+        'lockheed', 'convair', 'northrop', 'grumman', 'mcdonnell', 'dornier',
+        'tupolev', 'antonov',
+        'havilland',                 // de Havilland: last word is "havilland"
+        // Powersports / Outdoor Power
+        'polaris', 'husqvarna', 'stihl',
+        'can-am', 'ski-doo', 'sea-doo',
+        // Motorcycles
+        'kawasaki', 'yamaha', 'ducati', 'triumph', 'norton',
+        'aprilia', 'suzuki', 'vincent', 'bsa', 'laverda', 'ural', 'enfield',
+        'harley', 'davidson',        // Harley-Davidson
+        'agusta',                    // MV Agusta: last word is "agusta"
+        'guzzi',                     // Moto Guzzi: last word is "guzzi"
+        'indian',                    // Indian Motorcycle
+        'benelli', 'ktm', 'jawa', 'velocette', 'ajs', 'husaberg', 'puch',
+        'morini',                    // Moto Morini: last word is "morini"
+        // Firearms
+        'remington', 'winchester', 'browning', 'beretta', 'glock', 'walther',
+        'ruger', 'mossberg', 'marlin', 'springfield', 'makarov', 'kalashnikov',
+        'heckler', 'koch',           // Heckler & Koch: last word is "koch"
+        'wesson',                    // Smith & Wesson: last word is "wesson"
+        'sauer',                     // Sig Sauer: last word is "sauer"
+        'colt', 'sig', 'savage', 'barrett', 'cz',
+        'steyr', 'webley', 'fn', 'vickers', 'weatherby', 'chiappa', 'taurus',
+        // Computers / Gaming
+        'ibm', 'intel', 'atari', 'commodore', 'amiga', 'xbox',
+        'tandy', 'amstrad', 'sinclair',
+        // Photography / Optics
+        'nikon', 'canon', 'hasselblad', 'leica', 'mamiya', 'pentax',
+        'fuji', 'fujifilm', 'yashica',
+        // Musical Instruments / Audio
+        'gibson', 'fender', 'rickenbacker', 'bosendorfer', 'baldwin',
+        'roland', 'korg', 'arp', 'technics', 'marshall',
+        'boogie',                    // Mesa Boogie: last word is "boogie"
+        'jbl', 'bose',
+        'marantz', 'sansui', 'peavey', 'dynaco', 'nad', 'mcintosh',
+        'kardon', 'altec', 'hafler', // Harman Kardon: last word is "kardon"
+        // Radio / Communications
+        'icom', 'kenwood', 'yaesu', 'cobra',
+        // Watches / Luxury
+        'omega', 'rolex',
+        'breitling', 'heuer', 'philippe', 'patek', 'longines', 'seiko',
+        // Other
+        'heinz', 'xerox', 'singer', 'tonka',
+        "levi's",                    // Levi's 501 — apostrophe now captured by extended immPrecWord regex
+        'miller', 'craftsman', 'krupp',
+    ]);
+    if (brandNames.has(immPrecWord)) return false;
+
+    // Two-word brand phrases where the last word alone is too generic to inhibit safely
+    const twoWordMatch = before.match(/\b([a-z]+)\s+([a-z]+)\s*$/);
+    const twoWordPhrase = twoWordMatch ? `${twoWordMatch[1]} ${twoWordMatch[2]}` : '';
+    const brandPhrases = new Set(['sea ray', 'arctic cat', 'de soto']);
+    if (brandPhrases.has(twoWordPhrase)) return false;
 
     // Strong indicators — if present anywhere in the sentence, definitely a year.
     // Fuzzy modifiers (around, circa, etc.) are intentionally NOT in this list because
@@ -317,27 +443,6 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     // Fiscal period notation: Q3 2024, H1 2023 — treat the following year as temporal
     const fiscalPrecedingMatch = rawBefore.match(/\b(Q[1-4]|H[12])\s*$/i);
     if (fiscalPrecedingMatch) return true;
-
-    // Words immediately before the number that mark it as a non-year identifier
-    const precedingInhibitors = new Set([
-        // Road / transportation
-        'highway', 'hwy', 'route', 'rte', 'freeway', 'expressway', 'interstate',
-        // Network / tech standards
-        'port', 'rfc', 'isbn', 'issn', 'sku',
-        // Legal / administrative
-        'patent', 'law', 'ordinance', 'statute', 'regulation',
-        // HTTP / error codes
-        'http', 'error', 'status',
-        // Document references
-        'page', 'p.', 'figure', 'fig', 'exhibit', 'appendix', 'chapter', 'article', 'section', 'number',
-        // Score / rating context
-        'score', 'scored', 'scoring', 'rating', 'rated', 'ranked', 'ranking',
-        // Misc designators
-        'form', 'episode', 'ep', 'channel', 'track', 'gate', 'exit', 'room', 'floor', 'code',
-    ]);
-    const immPrecMatch = before.match(/\b([a-z.]+)\s*$/);
-    const immPrecWord = immPrecMatch ? immPrecMatch[1] : '';
-    if (precedingInhibitors.has(immPrecWord)) return false;
 
     // If a count noun follows the number, it is likely a quantity, not a year.
     // Applies to all unlabeled years (not just fuzzy-prefixed ones).
@@ -553,6 +658,8 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         "ppm", "ppb",
         // Power / electrical mode
         "hp", "bhp", "ac", "dc",
+        // Radio band identifiers (1200 AM, 101 FM)
+        "am", "fm",
         // Rate abbreviations
         "bpm", "mpg", "baud",
         // Ordinal suffixes (400th, 1200th, etc.)
@@ -639,6 +746,10 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         if (!w) return false;
         if (irregularPlurals.includes(w)) return true;
         if (w.endsWith("s")) {
+            // Suffix rules: structurally singular word-forms, never count nouns
+            if (w.endsWith("ness")) return false; // darkness, illness, wellness, sadness, …
+            if (w.endsWith("ics")) return false;  // politics, economics, physics, mathematics, …
+            if (w.endsWith("ess")) return false;  // congress, fortress, empress, countess, duchess, princess, …
             const isTemporalWord = strongIndicators.some(ind => {
                 const escaped = ind.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                 return new RegExp(`^${escaped}$`, 'i').test(w);
@@ -647,12 +758,56 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
                 // Greek/Latin -is forms (singular, not plural)
                 'crisis', 'basis', 'thesis', 'hypothesis', 'analysis', 'synthesis',
                 'diagnosis', 'prognosis', 'emphasis', 'genesis', 'nemesis',
+                'iris', 'alexis', 'artemis', 'paris', 'acropolis', 'metropolis',
                 // Latin -us forms (singular)
                 'status', 'bonus', 'campus', 'circus', 'focus', 'nexus', 'radius', 'virus',
+                'census', 'exodus', 'caucus', 'hiatus', 'apparatus', 'syllabus',
+                'prospectus', 'impetus', 'stimulus', 'calculus', 'cumulus', 'stratus',
+                'nimbus', 'mucus', 'discus', 'cactus', 'fetus', 'humus', 'abacus',
+                'fungus', 'uterus', 'sinus', 'chorus', 'colossus', 'platypus',
                 // Abstract nouns
                 'progress', 'success', 'access', 'excess', 'process', 'stress',
                 // Common singulars ending in s
-                'class', 'glass', 'mass', 'brass', 'gas', 'plus',
+                'class', 'glass', 'mass', 'brass', 'gas', 'plus', 'compass',
+                'grass', 'moss', 'cross', 'truss', 'bliss',
+                // Roman & ancient historical figures (ending in -us/-is, singular names)
+                'augustus', 'claudius', 'tiberius', 'marcus', 'brutus', 'crassus',
+                'spartacus', 'marius', 'darius', 'cyrus', 'herodotus', 'thucydides',
+                'leonidas', 'pericles', 'socrates', 'aristoteles', 'archimedes',
+                // Common English surnames (singular proper nouns, not count nouns)
+                'adams', 'davis', 'jones', 'harris', 'lewis', 'james', 'thomas', 'hughes',
+                'roberts', 'edwards', 'collins', 'morris', 'brooks', 'burns', 'mills', 'ross',
+                'barnes', 'wells', 'willis', 'richards', 'chambers', 'phillips', 'stephens',
+                'andrews', 'matthews', 'simmons', 'jenkins', 'rogers', 'walters', 'sanders',
+                'daniels', 'owens', 'hayes', 'williams', 'davies', 'watts', 'parsons',
+                'nichols', 'briggs', 'curtis', 'jacobs', 'ellis', 'abrams', 'pitts',
+                'douglas', 'douglass', 'charles', 'francis', 'norris', 'travis', 'ferris',
+                'jarvis', 'otis', 'hobbs', 'gibbs', 'biggs', 'riggs', 'griggs', 'phelps',
+                'stokes', 'bates', 'yates', 'oates', 'gates', 'keats', 'yeats', 'hobbes',
+                'perkins', 'atkins', 'hawkins', 'watkins', 'higgins', 'gibbons', 'tompkins',
+                'hutchins', 'burrows', 'meadows', 'commons', 'tubbs', 'elvis',
+                // International leaders / historical figures (ending in -s, not caught by suffix rules)
+                'calles', 'cardenas', 'vargas', 'morales', 'marcos', 'rosas', 'torres',
+                'santos', 'lagos', 'ohiggins', 'reyes', 'morelos',
+                'louis', 'nicholas', 'engels', 'strauss',
+                // Ancient rulers — Near East, Egypt, Persia (not covered by -us rule)
+                'xerxes', 'cambyses', 'ramses', 'ramesses', 'thutmosis', 'sesostris',
+                // Cities — European (very common in historical text)
+                'athens', 'brussels', 'versailles', 'cannes', 'nantes', 'orleans', 'naples',
+                'thebes', 'flanders', 'rhodes', 'wales', 'thames',
+                // Cities — American
+                'dallas', 'memphis', 'minneapolis', 'indianapolis', 'annapolis',
+                'angeles', 'vegas', 'columbus',
+                // Countries / territories whose English name ends in -s
+                'netherlands', 'philippines',
+                // US states ending in -s
+                'texas', 'kansas', 'arkansas', 'illinois', 'massachusetts',
+                // Mountain ranges / geographic features ending in -s
+                'alps', 'andes',
+                // Musicians (classical & popular)
+                'brahms', 'sibelius', 'beatles', 'ramones',
+                // Film directors, actors (excluded: bridges, sellers, hanks, hawks — too common as count nouns)
+                'welles', 'lucas', 'hopkins', 'stevens',
             ];
             return !isTemporalWord && !verbsEndingInS.includes(w) && !adjectivesEndingInS.includes(w) && !singularsEndingInS.includes(w);
         }
@@ -908,7 +1063,7 @@ function processRanges(text, outerSurrounding = null, outerMatchOffset = 0) {
         const fromLabel = hasEra
             ? `${year1} ${finalEra1}–${year2} ${finalEra2}`
             : `${year1}–${year2} ${finalEra2}`;
-        console.log("Processed in RANGES");
+        //console.log("Processed in RANGES");
         return `${formattedPrefix}${converted1}–${converted2} H.E. (Holocene Era) [converted from ${fromLabel}]`;
     });
 }
@@ -944,9 +1099,9 @@ function processSingleYears(text) {
         const afterText = string.slice(offset + match.length);
         const appendPeriod = (eraConsumedPeriod && (/^\s+[A-Z]/.test(afterText) || afterText.trim() === '')) ? '.' : '';
 
-        console.log("YEAR IS: " + year + " | ERA IS: " + era);
+        //console.log("YEAR IS: " + year + " | ERA IS: " + era);
 
-        console.log("Processed in SINGLE YEARS");
+        //console.log("Processed in SINGLE YEARS");
         return `${formattedPrefix}${converted} H.E. (Holocene Era) [converted from ${year} ${era}]${appendPeriod}${trailingPeriod || ''}`;
     });
 }
@@ -958,7 +1113,7 @@ function processUnlabeledYears(text) {
         const year = parseInt(yearStr, 10);
         if (year < 100 || year > 3000) return match;
         const converted = convertYear(year, 'CE');
-        console.log("Processed in UNLABELED YEARS");
+        //console.log("Processed in UNLABELED YEARS");
         return `${prefix}${converted} H.E. (Holocene Era) [converted from ${year} CE]`;
     });
 
@@ -977,7 +1132,7 @@ function processUnlabeledYears(text) {
         const era = "CE";
         const converted = convertYear(year, era);
 
-        console.log("Processed in UNLABELED YEARS");
+        //console.log("Processed in UNLABELED YEARS");
         return `${converted} H.E. (Holocene Era) [converted from ${year} ${era}]`;
     });
 }
@@ -1005,7 +1160,7 @@ function processPluralReferences(text) {
         //Only add 's' if original match had an 's' (indicating a plural/decade)
         const hasS = /\ds\b/.test(match);
 
-        console.log("Processed in PLURAL REF");
+        //console.log("Processed in PLURAL REF");
         return `${formattedPrefix}${convertedNumber}${hasS ? "s" : ""} H.E. (Holocene Era) [converted from ${numberStr}s ${eraStr || "CE"}]`;
     });
 }
@@ -1038,8 +1193,8 @@ function processCenturyReferences(text) {
             convertedNumber -= 1;
         }
 
-        console.log("Processed in CENTURY REF");
-        console.log("UPDATED CENTURY REGEX ACTIVE");
+        //console.log("Processed in CENTURY REF");
+        //console.log("UPDATED CENTURY REGEX ACTIVE");
         return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${centuryNumberStr}${ordinal} century${eraStr ? " " + eraStr : ""}]${trailingSpace}`;
     });
 }
@@ -1064,7 +1219,7 @@ function processWrittenCenturies(text) {
         const prefix = formatPrefix(fuzzy);
         const suffix = getOrdinalSuffix(num);
 
-        console.log("Processed in WRITTEN CENTURIES");
+        //console.log("Processed in WRITTEN CENTURIES");
         return `${prefix}${num}${suffix} century${era ? " " + era : ""}`;
     }
   );
@@ -1092,7 +1247,7 @@ function processWrittenHundreds(text) {
             convertedNumber -= 1;
         }
 
-        console.log("Processed in WRITTEN HUNDREDS");
+        //console.log("Processed in WRITTEN HUNDREDS");
         return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${baseNumber} ${normalizedEra}]`;
     });
 }
@@ -1119,6 +1274,35 @@ function protectDecades(text, decadePlaceholders){
             'page', 'p.', 'figure', 'fig', 'exhibit', 'appendix', 'chapter', 'article', 'section', 'number',
             'score', 'scored', 'scoring', 'rating', 'rated', 'ranked', 'ranking',
             'form', 'episode', 'ep', 'channel', 'track', 'gate', 'exit', 'room', 'floor', 'code',
+            // Brand names — model numbers should not be treated as decade years
+            'porsche', 'ferrari', 'lamborghini', 'maserati', 'bugatti', 'mclaren', 'shelby',
+            'fiat', 'alfa', 'romeo', 'lancia', 'audi', 'bmw', 'mercedes', 'benz', 'daimler',
+            'volvo', 'saab', 'peugeot', 'jaguar', 'rover', 'cord', 'delorean', 'packard', 'nash',
+            'healey', 'ford', 'chevrolet', 'chrysler', 'ram', 'lincoln', 'buick', 'oldsmobile',
+            'dodge', 'pontiac', 'plymouth', 'amc', 'studebaker', 'hudson',
+            'honda', 'toyota', 'nissan', 'mitsubishi', 'mazda', 'subaru',
+            'evinrude', 'mercury', 'whaler', 'peterbilt', 'kenworth', 'freightliner', 'scania',
+            'deere', 'massey', 'ferguson', 'caterpillar', 'komatsu', 'hanomag', 'panhard',
+            'kubota', 'fendt', 'claas', 'deutz', 'terex', 'hitachi',
+            'boeing', 'airbus', 'embraer', 'bombardier', 'cessna', 'beechcraft',
+            'piper', 'gulfstream', 'learjet', 'sikorsky', 'fokker', 'mirage', 'bell',
+            'lockheed', 'convair', 'northrop', 'grumman', 'mcdonnell', 'dornier', 'tupolev', 'antonov', 'havilland',
+            'polaris', 'husqvarna', 'stihl', 'can-am', 'ski-doo', 'sea-doo',
+            'kawasaki', 'yamaha', 'ducati', 'triumph', 'norton', 'aprilia', 'suzuki',
+            'vincent', 'bsa', 'laverda', 'ural', 'enfield', 'harley', 'davidson',
+            'agusta', 'guzzi', 'indian', 'benelli', 'ktm', 'jawa', 'velocette', 'ajs', 'husaberg', 'puch', 'morini',
+            'remington', 'winchester', 'browning', 'beretta', 'glock', 'walther',
+            'ruger', 'mossberg', 'marlin', 'springfield', 'makarov', 'kalashnikov',
+            'heckler', 'koch', 'wesson', 'sauer', 'colt', 'sig', 'savage', 'barrett', 'cz',
+            'steyr', 'webley', 'fn', 'vickers', 'weatherby', 'chiappa', 'taurus',
+            'ibm', 'intel', 'atari', 'commodore', 'amiga', 'xbox', 'tandy', 'amstrad', 'sinclair',
+            'nikon', 'canon', 'hasselblad', 'leica', 'mamiya', 'pentax', 'fuji', 'fujifilm', 'yashica',
+            'gibson', 'fender', 'rickenbacker', 'bosendorfer', 'baldwin',
+            'roland', 'korg', 'arp', 'technics', 'marshall', 'boogie', 'jbl', 'bose',
+            'marantz', 'sansui', 'peavey', 'dynaco', 'nad', 'mcintosh', 'kardon', 'altec', 'hafler',
+            'icom', 'kenwood', 'yaesu', 'cobra',
+            'omega', 'rolex', 'breitling', 'heuer', 'philippe', 'patek', 'longines', 'seiko',
+            'heinz', 'xerox', 'singer', 'tonka', "levi's", 'miller', 'craftsman', 'krupp',
         ]);
         if (decadeInhibitors.has(immPrecWord)) return match;
 
@@ -1127,6 +1311,44 @@ function protectDecades(text, decadePlaceholders){
         if (new RegExp(`\\b(BP|B\\.P\\.)\\b`, "i").test(after)) {
             return match;
         }
+
+        // Don't protect when a unit abbreviation immediately follows (e.g. "1080 AM", "1750 RPM", "2350 W")
+        const rawAfterStr = string.slice(offset + match.length, offset + match.length + 15);
+        const firstWordAfter = rawAfterStr.match(/^\s*([A-Za-z]+)/);
+        const wordAfter = firstWordAfter ? firstWordAfter[1].toLowerCase() : '';
+        const afterUnitInhibitors = new Set([
+            // Radio bands
+            'am', 'fm',
+            // Frequency
+            'hz', 'khz', 'mhz', 'ghz', 'thz',
+            // Rotation / rate
+            'rpm', 'bpm', 'baud',
+            // Speed / fuel economy
+            'mph', 'kph', 'kt', 'kn', 'mpg',
+            // Pressure
+            'psi', 'pa', 'kpa', 'mpa', 'bar', 'mbar', 'btu',
+            // Power
+            'w', 'kw', 'mw', 'gw', 'hp', 'bhp',
+            // Energy
+            'j', 'kj', 'mj', 'ev', 'kev', 'mev',
+            // Voltage / current
+            'v', 'kv', 'mv', 'ma', 'ah',
+            // Length
+            'm', 'km', 'cm', 'mm', 'nm', 'ft', 'yd', 'mi',
+            // Mass
+            'kg', 'g', 'mg', 'lb', 'oz',
+            // Volume
+            'l', 'ml', 'dl', 'cl', 'gal',
+            // Data size / rate
+            'kb', 'mb', 'gb', 'tb', 'bps', 'kbps', 'mbps', 'gbps',
+            // Sound / light
+            'db', 'lm', 'lx',
+            // Caloric / concentration
+            'cal', 'kcal', 'ppm', 'ppb',
+            // Force
+            'n',
+        ]);
+        if (afterUnitInhibitors.has(wordAfter)) return match;
 
         const id = decadePlaceholders.length;
         decadePlaceholders.push(match);
@@ -1183,7 +1405,7 @@ function processDecadeRanges(text) {
             result += "–" + secondDisplay;
         }
 
-        console.log("Processed in DECADES");
+        //console.log("Processed in DECADES");
         return `${result} H.E. (Holocene Era) [converted from ${match} ${era}]`;
     });
 }
@@ -1227,7 +1449,7 @@ function processDecadeAbbreviatedRanges(text) {
         //Doesn't convert abbreviated second year (i.e. 2 digits) - appends second year onto end of result as is
         result += "–" + second;
 
-        console.log("Processed in ABBREVIATED DECADES");
+        //console.log("Processed in ABBREVIATED DECADES");
         return `${result} H.E. (Holocene Era) [converted from ${match} ${era}]`;
     });
 }
@@ -1716,6 +1938,70 @@ const allTests = [
     { input: "Fires an AK-47 rifle in combat situations", expected: "Fires an AK-47 rifle in combat situations" },
     { input: "B-52 bombers flew long-range strategic missions", expected: "B-52 bombers flew long-range strategic missions" },
     { input: "Heckler & Koch 416 was a part", expected: "Heckler & Koch 416 was a part" },
+    { input: "Porsche 911 is an iconic sports car", expected: "Porsche 911 is an iconic sports car" },
+    { input: "Ferrari 458 Italia was produced in 2009", expected: "Ferrari 458 Italia was produced in 12009 H.E. (Holocene Era) [converted from 2009 CE]" },
+    { input: "Remington 700 is a bolt-action rifle", expected: "Remington 700 is a bolt-action rifle" },
+    { input: "Smith & Wesson 500 revolver", expected: "Smith & Wesson 500 revolver" },
+    { input: "Kawasaki 650 motorcycle", expected: "Kawasaki 650 motorcycle" },
+    // Automobiles — American classic / muscle
+    { input: "The Pontiac 455 was a powerful engine", expected: "The Pontiac 455 was a powerful engine" },
+    { input: "Plymouth 440 powered the Road Runner", expected: "Plymouth 440 powered the Road Runner" },
+    { input: "The AMC 360 powered the Javelin", expected: "The AMC 360 powered the Javelin" },
+    { input: "The Studebaker 289 was the Golden Hawk engine", expected: "The Studebaker 289 was the Golden Hawk engine" },
+    { input: "The Subaru 360 was Japan's first kei car", expected: "The Subaru 360 was Japan's first kei car" },
+    // Aircraft
+    { input: "The Lockheed 1011 TriStar was a wide-body jet", expected: "The Lockheed 1011 TriStar was a wide-body jet" },
+    { input: "Convair 880 entered service in 1959", expected: "Convair 880 entered service in 11959 H.E. (Holocene Era) [converted from 1959 CE]" },
+    { input: "The Antonov 124 is the world's largest cargo aircraft", expected: "The Antonov 124 is the world's largest cargo aircraft" },
+    // Motorcycles
+    { input: "The Benelli 750 Sei had six cylinders", expected: "The Benelli 750 Sei had six cylinders" },
+    { input: "KTM 690 is a popular adventure bike", expected: "KTM 690 is a popular adventure bike" },
+    // Firearms
+    { input: "The Steyr 1891 was the standard Austrian rifle", expected: "The Steyr 1891 was the standard Austrian rifle" },
+    { input: "Webley 455 was the British service revolver", expected: "Webley 455 was the British service revolver" },
+    { input: "Taurus 444 is a powerful revolver", expected: "Taurus 444 is a powerful revolver" },
+    // Hi-Fi / Audio
+    { input: "The Marantz 2270 is a sought-after vintage receiver", expected: "The Marantz 2270 is a sought-after vintage receiver" },
+    { input: "Sansui 1000 was one of the finest receivers", expected: "Sansui 1000 was one of the finest receivers" },
+    { input: "McIntosh 275 is a classic tube amplifier", expected: "McIntosh 275 is a classic tube amplifier" },
+    // Computers
+    { input: "The Tandy 1000 was compatible with IBM PC", expected: "The Tandy 1000 was compatible with IBM PC" },
+    // Watches
+    { input: "Patek Philippe 2499 is the most coveted chronograph", expected: "Patek Philippe 2499 is the most coveted chronograph" },
+    { input: "Breitling 806 was the original Navitimer reference", expected: "Breitling 806 was the original Navitimer reference" },
+    // Agricultural
+    { input: "The Kubota 2350 is a compact utility tractor", expected: "The Kubota 2350 is a compact utility tractor" },
+    { input: "Fendt 936 is one of the most powerful tractors", expected: "Fendt 936 is one of the most powerful tractors" },
+    // Two-word phrase brands
+    { input: "De Soto 500 was a full-size American car", expected: "De Soto 500 was a full-size American car" },
+
+    // Decimal-preceded numbers (calibers, batting averages) — period before number
+    { input: "He fires .308 Winchester rounds at the range", expected: "He fires .308 Winchester rounds at the range" },
+    { input: "The .338 Lapua Magnum is a long-range cartridge", expected: "The .338 Lapua Magnum is a long-range cartridge" },
+    { input: "batted .300 for the entire season last year", expected: "batted .300 for the entire season last year" },
+
+    // Flight / mission numbers
+    { input: "Flight 1549 landed safely on the Hudson River", expected: "Flight 1549 landed safely on the Hudson River" },
+    { input: "Mission 1202 was aborted during the lunar landing", expected: "Mission 1202 was aborted during the lunar landing" },
+    { input: "Flight 800 exploded shortly after takeoff", expected: "Flight 800 exploded shortly after takeoff" },
+
+    // Musical catalog / opus numbers
+    { input: "Beethoven's Op. 131 is a late string quartet", expected: "Beethoven's Op. 131 is a late string quartet" },
+    { input: "listen to Opus 131 performed by the Emerson Quartet", expected: "listen to Opus 131 performed by the Emerson Quartet" },
+    { input: "BWV 1045 is a Bach violin concerto fragment", expected: "BWV 1045 is a Bach violin concerto fragment" },
+    { input: "Symphony No. 1066 was discovered in an archive", expected: "Symphony No. 1066 was discovered in an archive" },
+
+    // AM radio station identifiers
+    { input: "tuned to 1200 AM for the morning talk show", expected: "tuned to 1200 AM for the morning talk show" },
+    { input: "the 1080 AM station broadcasts news all day", expected: "the 1080 AM station broadcasts news all day" },
+
+    // Location / contact designators
+    { input: "Our office is in Suite 1200 on the top floor", expected: "Our office is in Suite 1200 on the top floor" },
+    { input: "Unit 1200 in Building A was recently renovated", expected: "Unit 1200 in Building A was recently renovated" },
+    { input: "call the main desk at ext. 1234 for assistance", expected: "call the main desk at ext. 1234 for assistance" },
+    { input: "reach our support line at extension 1800 today", expected: "reach our support line at extension 1800 today" },
+    { input: "postcode 2000 covers the Sydney central business district", expected: "postcode 2000 covers the Sydney central business district" },
+    { input: "zip 1234 is an unusual short postal code format", expected: "zip 1234 is an unusual short postal code format" },
 
     // Highway / route numbers
     { input: "Take Highway 101 south toward the city", expected: "Take Highway 101 south toward the city" },
@@ -1863,10 +2149,130 @@ const allTests = [
     // Year as adjective for events — festival, boycott, embargo not in strongIndicators
     { input: "the 1969 Woodstock festival drew enormous enthusiastic crowds", expected: "the 11969 H.E. (Holocene Era) [converted from 1969 CE] Woodstock festival drew enormous enthusiastic crowds" },
     { input: "the 1980 Olympics boycott angered many dedicated athletes", expected: "the 11980 H.E. (Holocene Era) [converted from 1980 CE] Olympics boycott angered many dedicated athletes" },
-    { input: "the 1973 oil embargo shocked Western economies deeply", expected: "the 11973 H.E. (Holocene Era) [converted from 1973 CE] oil embargo shocked Western economies deeply" }
+    { input: "the 1973 oil embargo shocked Western economies deeply", expected: "the 11973 H.E. (Holocene Era) [converted from 1973 CE] oil embargo shocked Western economies deeply" },
 
+    // --- FALSE NEGATIVES FIXED: Words ending in -s that are NOT count nouns ---
+
+    // -ness words (abstract nouns, never count nouns)
+    { input: "the 1906 darkness that followed the earthquake shocked everyone", expected: "the 11906 H.E. (Holocene Era) [converted from 1906 CE] darkness that followed the earthquake shocked everyone" },
+    { input: "1918 illness swept through the military camps rapidly", expected: "11918 H.E. (Holocene Era) [converted from 1918 CE] illness swept through the military camps rapidly" },
+    { input: "a sense of 1929 helplessness gripped ordinary investors worldwide", expected: "a sense of 11929 H.E. (Holocene Era) [converted from 1929 CE] helplessness gripped ordinary investors worldwide" },
+
+    // -ics words (field/discipline names, grammatically singular)
+    { input: "1848 politics in Germany were turbulent and revolutionary", expected: "11848 H.E. (Holocene Era) [converted from 1848 CE] politics in Germany were turbulent and revolutionary" },
+    { input: "the 1776 economics of the colonies favored independence strongly", expected: "the 11776 H.E. (Holocene Era) [converted from 1776 CE] economics of the colonies favored independence strongly" },
+    { input: "1687 physics established Newton's laws of motion forever", expected: "11687 H.E. (Holocene Era) [converted from 1687 CE] physics established Newton's laws of motion forever" },
+
+    // -ess words (singular nouns ending in -ess: congress, fortress, empress, etc.)
+    { input: "the 1812 Congress declared war on Britain that summer", expected: "the 11812 H.E. (Holocene Era) [converted from 1812 CE] Congress declared war on Britain that summer" },
+    { input: "1453 fortress walls proved no match for Ottoman cannon", expected: "11453 H.E. (Holocene Era) [converted from 1453 CE] fortress walls proved no match for Ottoman cannon" },
+    { input: "the 1762 empress Catherine seized control of Russia", expected: "the 11762 H.E. (Holocene Era) [converted from 1762 CE] empress Catherine seized control of Russia" },
+
+    // Latin -us singulars (census, exodus, caucus, hiatus, apparatus, syllabus)
+    { input: "the 1810 census revealed the true size of the population", expected: "the 11810 H.E. (Holocene Era) [converted from 1810 CE] census revealed the true size of the population" },
+    { input: "the 1848 exodus from Ireland accelerated dramatically after famine", expected: "the 11848 H.E. (Holocene Era) [converted from 1848 CE] exodus from Ireland accelerated dramatically after famine" },
+    { input: "the 1860 caucus selected Lincoln as the Republican nominee", expected: "the 11860 H.E. (Holocene Era) [converted from 1860 CE] caucus selected Lincoln as the Republican nominee" },
+
+    // Common surnames ending in -s (not count nouns)
+    { input: "the 1826 Adams administration pursued an ambitious national agenda", expected: "the 11826 H.E. (Holocene Era) [converted from 1826 CE] Adams administration pursued an ambitious national agenda" },
+    { input: "1865 Davis surrendered and the Confederacy collapsed entirely", expected: "11865 H.E. (Holocene Era) [converted from 1865 CE] Davis surrendered and the Confederacy collapsed entirely" },
+    { input: "the 1884 Hayes presidency had already ended four years prior", expected: "the 11884 H.E. (Holocene Era) [converted from 1884 CE] Hayes presidency had already ended four years prior" },
+
+    // Expanded surnames and historical figures
+    { input: "the 1845 Douglass narrative described his life in slavery", expected: "the 11845 H.E. (Holocene Era) [converted from 1845 CE] Douglass narrative described his life in slavery" },
+    { input: "the 1660 Charles restoration transformed English monarchy", expected: "the 11660 H.E. (Holocene Era) [converted from 1660 CE] Charles restoration transformed English monarchy" },
+    { input: "the 1825 Nicholas I regime imposed strict censorship on Russia", expected: "the 11825 H.E. (Holocene Era) [converted from 1825 CE] Nicholas I regime imposed strict censorship on Russia" },
+    { input: "the 1934 Cardenas presidency nationalized key Mexican industries", expected: "the 11934 H.E. (Holocene Era) [converted from 1934 CE] Cardenas presidency nationalized key Mexican industries" },
+    { input: "the 1930 Vargas regime came to power through a Brazilian coup", expected: "the 11930 H.E. (Holocene Era) [converted from 1930 CE] Vargas regime came to power through a Brazilian coup" },
+    { input: "the 1818 OHiggins government established Chilean independence fully", expected: "the 11818 H.E. (Holocene Era) [converted from 1818 CE] OHiggins government established Chilean independence fully" },
+    { input: "the 1715 Louis court at Versailles was the envy of Europe", expected: "the 11715 H.E. (Holocene Era) [converted from 1715 CE] Louis court at Versailles was the envy of Europe" },
+    { input: "the 1883 Engels correspondence shaped early socialist theory", expected: "the 11883 H.E. (Holocene Era) [converted from 1883 CE] Engels correspondence shaped early socialist theory" },
+    // Latin -us expanded (prospectus, stimulus, calculus, cumulus, stratus)
+    { input: "the 1687 calculus dispute between Newton and Leibniz was fierce", expected: "the 11687 H.E. (Holocene Era) [converted from 1687 CE] calculus dispute between Newton and Leibniz was fierce" },
+    { input: "the 1803 prospectus outlined the original terms of the Louisiana Purchase", expected: "the 11803 H.E. (Holocene Era) [converted from 1803 CE] prospectus outlined the original terms of the Louisiana Purchase" },
+    // Ancient historical figures
+    { input: "the 44 BCE Augustus consolidation of power transformed Rome forever", expected: "the 9957 H.E. (Holocene Era) [converted from 44 BCE] Augustus consolidation of power transformed Rome forever" },
+    { input: "the 480 BCE Leonidas stand at Thermopylae inspired all of Greece", expected: "the 9521 H.E. (Holocene Era) [converted from 480 BCE] Leonidas stand at Thermopylae inspired all of Greece" },
+
+    // Cities — European
+    { input: "The 1990 Paris flood caused widespread damage across the city", expected: "The 11990 H.E. (Holocene Era) [converted from 1990 CE] Paris flood caused widespread damage across the city" },
+    { input: "the 1919 Versailles treaty formally ended the First World War", expected: "the 11919 H.E. (Holocene Era) [converted from 1919 CE] Versailles treaty formally ended the First World War" },
+    { input: "the 1896 Athens Olympics were the first modern games held", expected: "the 11896 H.E. (Holocene Era) [converted from 1896 CE] Athens Olympics were the first modern games held" },
+    { input: "the 1957 Brussels World's Fair showcased atomic age technology", expected: "the 11957 H.E. (Holocene Era) [converted from 1957 CE] Brussels World's Fair showcased atomic age technology" },
+    { input: "the 1944 Nantes resistance fighters sabotaged German rail lines", expected: "the 11944 H.E. (Holocene Era) [converted from 1944 CE] Nantes resistance fighters sabotaged German rail lines" },
+    // Cities — American
+    { input: "the 1968 Memphis assassination changed American history forever", expected: "the 11968 H.E. (Holocene Era) [converted from 1968 CE] Memphis assassination changed American history forever" },
+    { input: "the 1963 Dallas motorcade ended in tragedy for the nation", expected: "the 11963 H.E. (Holocene Era) [converted from 1963 CE] Dallas motorcade ended in tragedy for the nation" },
+    { input: "the 1815 Orleans campaign was Napoleon's final military defeat", expected: "the 11815 H.E. (Holocene Era) [converted from 1815 CE] Orleans campaign was Napoleon's final military defeat" },
+    // US States
+    { input: "the 1836 Texas revolution established an independent republic", expected: "the 11836 H.E. (Holocene Era) [converted from 1836 CE] Texas revolution established an independent republic" },
+    { input: "the 1854 Kansas Nebraska Act inflamed sectional tensions badly", expected: "the 11854 H.E. (Holocene Era) [converted from 1854 CE] Kansas Nebraska Act inflamed sectional tensions badly" },
+    { input: "the 1780 Massachusetts constitution was the first written one", expected: "the 11780 H.E. (Holocene Era) [converted from 1780 CE] Massachusetts constitution was the first written one" },
+    // Ancient rulers
+    { input: "the 480 BCE Xerxes invasion of Greece was eventually repelled", expected: "the 9521 H.E. (Holocene Era) [converted from 480 BCE] Xerxes invasion of Greece was eventually repelled" },
+    { input: "the 1279 BCE Ramses victory at Kadesh was celebrated for decades", expected: "the 8722 H.E. (Holocene Era) [converted from 1279 BCE] Ramses victory at Kadesh was celebrated for decades" },
+    // Musicians
+    { input: "the 1897 Brahms fourth symphony premiered to great acclaim then", expected: "the 11897 H.E. (Holocene Era) [converted from 1897 CE] Brahms fourth symphony premiered to great acclaim then" },
+    { input: "the 1964 Beatles arrival in America transformed popular music entirely", expected: "the 11964 H.E. (Holocene Era) [converted from 1964 CE] Beatles arrival in America transformed popular music entirely" },
+    // Film
+    { input: "the 1941 Welles masterpiece Citizen Kane redefined cinema forever", expected: "the 11941 H.E. (Holocene Era) [converted from 1941 CE] Welles masterpiece Citizen Kane redefined cinema forever" },
+    { input: "the 1977 Lucas blockbuster Star Wars changed Hollywood permanently", expected: "the 11977 H.E. (Holocene Era) [converted from 1977 CE] Lucas blockbuster Star Wars changed Hollywood permanently" },
+
+
+    // --- UNLABELED YEARS: Historical Proper Nouns ---
+    // Specific cases: institution/group/event noun follows the year directly
+    { input: "The 1886 Shogunate was abolished during the Meiji Restoration", expected: "The 11886 H.E. (Holocene Era) [converted from 1886 CE] Shogunate was abolished during the Meiji Restoration" },
+    { input: "1997 Israeli diaspora communities gathered worldwide for the summit", expected: "11997 H.E. (Holocene Era) [converted from 1997 CE] Israeli diaspora communities gathered worldwide for the summit" },
+    { input: "the 1974 Panamanian congress voted on the new canal treaty", expected: "the 11974 H.E. (Holocene Era) [converted from 1974 CE] Panamanian congress voted on the new canal treaty" },
+
+    // Ethnic/national adjective before historical noun
+    { input: "the 1991 Bosnian war ended after years of brutal conflict", expected: "the 11991 H.E. (Holocene Era) [converted from 1991 CE] Bosnian war ended after years of brutal conflict" },
+    { input: "the 1994 Rwandan genocide shocked the world community deeply", expected: "the 11994 H.E. (Holocene Era) [converted from 1994 CE] Rwandan genocide shocked the world community deeply" },
+    { input: "the 1979 Iranian revolution changed the Middle East forever", expected: "the 11979 H.E. (Holocene Era) [converted from 1979 CE] Iranian revolution changed the Middle East forever" },
+    { input: "the 1956 Suez crisis erupted after Egyptian nationalization", expected: "the 11956 H.E. (Holocene Era) [converted from 1956 CE] Suez crisis erupted after Egyptian nationalization" },
+    { input: "the 1948 Arab rejection of the partition plan led to war", expected: "the 11948 H.E. (Holocene Era) [converted from 1948 CE] Arab rejection of the partition plan led to war" },
+
+    // Historical event nouns not in strongIndicators (revolution, uprising, reformation, crusade)
+    { input: "the 1789 Revolution transformed French society and politics", expected: "the 11789 H.E. (Holocene Era) [converted from 1789 CE] Revolution transformed French society and politics" },
+    { input: "the 1517 Reformation began with Luther's ninety-five theses", expected: "the 11517 H.E. (Holocene Era) [converted from 1517 CE] Reformation began with Luther's ninety-five theses" },
+    { input: "the 1956 Hungarian uprising was crushed by Soviet forces", expected: "the 11956 H.E. (Holocene Era) [converted from 1956 CE] Hungarian uprising was crushed by Soviet forces" },
+    { input: "the 1853 Shogunate was weakened by American commodore Perry", expected: "the 11853 H.E. (Holocene Era) [converted from 1853 CE] Shogunate was weakened by American commodore Perry" },
+
+    // --- DECADE INHIBITOR: Brand Model Numbers Ending in X0 ---
+    // X0 numbers match the decade regex; the brand name before them must block protection
+    { input: "The Yamaha 1250 is a sport touring motorcycle", expected: "The Yamaha 1250 is a sport touring motorcycle" },
+    { input: "The Ducati 1260 Multistrada is a flagship adventure bike", expected: "The Ducati 1260 Multistrada is a flagship adventure bike" },
+    { input: "The Kawasaki 1050 Concours is a sport touring motorcycle", expected: "The Kawasaki 1050 Concours is a sport touring motorcycle" },
+    { input: "The Cessna 1750 is a twin-engine light aircraft", expected: "The Cessna 1750 is a twin-engine light aircraft" },
+    { input: "The Fendt 1050 Vario is a flagship agricultural tractor", expected: "The Fendt 1050 Vario is a flagship agricultural tractor" },
+    { input: "The Roland 1080 is a digital workstation synthesizer", expected: "The Roland 1080 is a digital workstation synthesizer" },
+
+    // --- DECADE INHIBITOR: Additional AM Radio Frequencies Ending in X0 ---
+    { input: "Tuned to 1150 AM for the live baseball broadcast", expected: "Tuned to 1150 AM for the live baseball broadcast" },
+    { input: "The 1340 AM signal carries local news and weather", expected: "The 1340 AM signal carries local news and weather" },
+    { input: "broadcasting on 1470 AM across three counties", expected: "broadcasting on 1470 AM across three counties" },
+
+    // --- DECADE INHIBITOR: Unit Abbreviations After X0 Numbers ---
+    // Without the after-word unit check, these would be wrongly converted as decade years
+    { input: "The motor spins at 1750 RPM at highway cruising speed", expected: "The motor spins at 1750 RPM at highway cruising speed" },
+    { input: "pressurized to 1450 PSI during the hydrostatic pressure test", expected: "pressurized to 1450 PSI during the hydrostatic pressure test" },
+    { input: "the generator outputs 2350 W of continuous rated power", expected: "the generator outputs 2350 W of continuous rated power" },
+    { input: "the supply rail runs at 1250 V in high-voltage mode", expected: "the supply rail runs at 1250 V in high-voltage mode" },
+    { input: "the cable is rated to 1350 kV for high-voltage transmission", expected: "the cable is rated to 1350 kV for high-voltage transmission" },
+    { input: "the cliff summit stands 1750 m above the valley floor", expected: "the cliff summit stands 1750 m above the valley floor" },
+    { input: "the load was tested at 2250 kg before the bridge opened", expected: "the load was tested at 2250 kg before the bridge opened" },
+    { input: "the antenna broadcasts at 1350 kHz on the shortwave band", expected: "the antenna broadcasts at 1350 kHz on the shortwave band" },
+
+    // --- REGRESSION: Historical Years Ending in X0 Still Convert ---
+    // Verify the brand and unit inhibitors do not accidentally block real year conversions
+    { input: "The 1960 Kennedy election transformed American politics forever", expected: "The 11960 H.E. (Holocene Era) [converted from 1960 CE] Kennedy election transformed American politics forever" },
+    { input: "the 1950 Korean War began with a sudden northern invasion", expected: "the 11950 H.E. (Holocene Era) [converted from 1950 CE] Korean War began with a sudden northern invasion" },
+    { input: "the 1940 Churchill speech rallied a besieged British nation", expected: "the 11940 H.E. (Holocene Era) [converted from 1940 CE] Churchill speech rallied a besieged British nation" },
+    { input: "the 1930 Vargas coup transformed Brazilian politics entirely", expected: "the 11930 H.E. (Holocene Era) [converted from 1930 CE] Vargas coup transformed Brazilian politics entirely" },
 
 ];
+
+let failCounter = 0;
 
 allTests.forEach(({ input, expected }) => {
     const output = processText(input);
@@ -1878,10 +2284,17 @@ allTests.forEach(({ input, expected }) => {
         console.log(`Output:   "${output}"`);
         console.log(`Expected: "${expected}"`);
         console.log("------");
+        failCounter += 1;
     } else {
-        console.log(`${pass} ${input}`);
-        console.log(`Output: ${output}`);
+        //console.log(`${pass} ${input}`);
+        //console.log(`Output: ${output}`);
     }
 });
+
+if (failCounter == 0) {
+    console.log("All tests pass.");
+} else {
+    console.log(`There were "${failCounter}" failures.`);
+}
 
 //-------------------------------------------------------
