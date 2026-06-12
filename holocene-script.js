@@ -91,6 +91,12 @@ const centuryRegex = new RegExp(
 );
 //console.log("UPDATED CENTURY REGEX ACTIVE")
 
+const impliedCenturyRegex = new RegExp(
+  `\\b(${FUZZY_MODIFIER})?(\\d+)(st|nd|rd|th)\\s+(${ERA_PATTERN})(?![a-zA-Z])(\\s*)`,
+  "gi"
+);
+// Groups: 1=fuzzyPrefix, 2=centuryNumberStr, 3=ordinalSuffix, 4=eraStr, 5=trailingSpace
+
 const millenniumRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?` +
   `(\\d+)(st|nd|rd|th)` +
@@ -117,6 +123,19 @@ const writtenCenturyRegex = new RegExp(
   `\\s+century\\s*(${ERA_PATTERN})?\\b`,
   "gi"
 );
+
+//Regex for written implied centuries (ordinal word + era tag, no "century" keyword):
+const writtenImpliedCenturyRegex = new RegExp(
+  `\\b(${FUZZY_MODIFIER})?` +
+  `((?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-\\w+)?|` +
+  `first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|` +
+  `tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|` +
+  `sixteenth|seventeenth|eighteenth|nineteenth|` +
+  `twentieth|thirtieth|fortieth|fiftieth|sixtieth|seventieth|eightieth|ninetieth)` +
+  `\\s+(${ERA_PATTERN})(?![a-zA-Z])\\b`,
+  "gi"
+);
+// Groups: 1=fuzzyPrefix, 2=wordOrdinal, 3=eraStr
 
 //Regex for written millennia:
 const writtenMillenniumRegex = new RegExp(
@@ -1114,6 +1133,7 @@ function parseWrittenHundreds(word) {
 
 //----------------CORE TEXT PROCESSING-----------------
 
+//Converts year ranges (e.g., "470–399 BC", "218 and 201 BC") to H.E., handling BCE, CE, BP, and unlabeled ascending ranges
 function processRanges(text, outerSurrounding = null, outerMatchOffset = 0) {
     return text.replace(rangeRegex, (match, fuzzyPrefix, prefixEra, y1, era1, fuzzyPrefix2, y2, era2, offset, string) => {
         const before = string[offset - 1];
@@ -1201,6 +1221,7 @@ function processRanges(text, outerSurrounding = null, outerMatchOffset = 0) {
     });
 }
 
+//Converts labeled single years (e.g., "399 BC", "117 CE", "A.D. 410") to H.E.
 function processSingleYears(text) {
     return text.replace(yearRegex, (match, fuzzyPrefix, prefixEra, yearStr, suffixEra, trailingPeriod, offset, string) => {
         const before = string[offset - 1];
@@ -1239,6 +1260,7 @@ function processSingleYears(text) {
     });
 }
 
+//Converts unlabeled CE years (e.g., "1969", "FY2025") to H.E. using context heuristics to avoid false positives
 function processUnlabeledYears(text) {
     // Handle fiscal year prefix notation where no word boundary exists (FY2025 → FY + 2025)
     text = text.replace(/\b(FY)(\d{4})\b/gi, (match, prefix, yearStr, offset, string) => {
@@ -1270,6 +1292,7 @@ function processUnlabeledYears(text) {
     });
 }
 
+//Converts decade/plural year references (e.g., "1800s", "1800s BCE") to H.E.
 function processPluralReferences(text) {
     //const pluralRegex = new RegExp(`\\b(\\d{1,4})s\\s*(${ERA_PATTERN})?\\b`, "gi");
     //const pluralRegex = new RegExp(`\\b(\\d{1,4})s(?!\\s*H\\.E\\.)\\s*(${ERA_PATTERN})?\\b`, "gi");
@@ -1336,6 +1359,35 @@ function processCenturyReferences(text) {
     });
 }
 
+//Converts ordinal + era shorthand with no "century" word (e.g., "34th BC", "1st AD") to H.E., treating them as century references
+function processImpliedCenturyReferences(text) {
+    return text.replace(impliedCenturyRegex, (match, fuzzyPrefix, centuryNumberStr, ordinalSuffix, eraStr, trailingSpace, offset, fullText) => {
+        if (isInsideConvertedText(fullText, offset)) return match;
+        if (match.includes("H.E.")) return match;
+
+        const formattedPrefix = formatPrefix(fuzzyPrefix);
+        const centuryNumber = parseInt(centuryNumberStr, 10);
+        const era = normalizeEra(eraStr);
+
+        let baseNumber;
+        if (era === "BCE") {
+            baseNumber = centuryNumber * 100;
+        } else {
+            baseNumber = (centuryNumber - 1) * 100;
+        }
+
+        let convertedNumber = convertYear(baseNumber, era);
+
+        if (era === "BCE" || era === "BC") {
+            convertedNumber -= 1;
+        }
+
+        const eraLabel = " " + normalizeEra(eraStr);
+        return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${centuryNumberStr}${ordinalSuffix} century${eraLabel}]${trailingSpace}`;
+    });
+}
+
+//Converts millennium references (e.g., "4th millennium BC", "2nd millennium CE") to H.E. as a decade range
 function processMillenniumReferences(text) {
     return text.replace(millenniumRegex, (match, fuzzyPrefix, numericStr, ordinalSuffix, separator, eraStr, trailingSpace, offset, fullText) => {
         if (isInsideConvertedText(fullText, offset)) return match;
@@ -1390,6 +1442,24 @@ function processWrittenCenturies(text) {
   );
 }
 
+//Pre-processor: converts written implied-century ordinals (e.g., "fourth BC") to numeric form (e.g., "4th BC") for processImpliedCenturyReferences
+function processWrittenImpliedCenturies(text) {
+    text = normalizeOrdinalSpacing(text);
+    return text.replace(writtenImpliedCenturyRegex, (match, fuzzy, word, era, offset, fullText) => {
+        if (isInsideConvertedText(fullText, offset)) return match;
+        if (match.includes("H.E.")) return match;
+
+        const num = parseWrittenOrdinal(word);
+        if (!num) return match;
+
+        const prefix = formatPrefix(fuzzy);
+        const suffix = getOrdinalSuffix(num);
+
+        return `${prefix}${num}${suffix} ${era}`;
+    });
+}
+
+//Pre-processor: converts written millennium ordinals (e.g., "fourth millennium BC") to numeric form (e.g., "4th millennium BC") for processMillenniumReferences
 function processWrittenMillennia(text) {
     text = normalizeOrdinalSpacing(text);
     return text.replace(
@@ -1409,6 +1479,7 @@ function processWrittenMillennia(text) {
   );
 }
 
+//Converts written hundred-year references (e.g., "nineteen hundreds", "eighteen hundreds BCE") to H.E.
 function processWrittenHundreds(text) {
     return text.replace(writtenHundredsRegex, (match, fuzzy, word, era, offset, fullText) => {
         //Checks to make sure the year isn't one that's already converted
@@ -1539,6 +1610,7 @@ function protectDecades(text, decadePlaceholders){
         return `__DECADE_${id}__`;
     });
 }
+//Converts decade or decade-range references (e.g., "1980s", "1980s–1990s") to H.E. after they are released from placeholder protection
 function processDecadeRanges(text) {
     return text.replace(decadeRegex, (match, first, second, offset, string) => {
         //Checks to make sure year is not already converted
@@ -1610,6 +1682,7 @@ function protectAbbreviatedDecades(text, abbreviatedDecadePlaceholders) {
         return `__ABBR_DECADE_${id}__`;
     });
 }
+//Converts abbreviated decade ranges (e.g., "1980s–90s") to H.E., keeping the second year abbreviated as-is
 function processDecadeAbbreviatedRanges(text) {
     return text.replace(abbreviatedDecadeRegex, (match, first, second, offset, string) => {
         //Checks to make sure year isn't already converted
@@ -1638,6 +1711,7 @@ function processDecadeAbbreviatedRanges(text) {
     });
 }
 
+//Main pipeline: runs all processors in order (ranges, single years, unlabeled, plurals, centuries, millennia, decades) and returns the fully converted text
 function processText(text) {
     // Normalize Unicode thin spaces (U+2009) to regular spaces — common in Wikipedia text
     text = text.replace(/ /g, ' ');
@@ -1709,10 +1783,12 @@ function processText(text) {
 
     //Processes written century numbers and converts them to numbers for the next step
     text = processWrittenCenturies(text);
+    text = processWrittenImpliedCenturies(text);
         //written centuries safeboxing skipped so they can convert in the next method:
 
     //Processes century number references and converts them to plural century references
     text = processCenturyReferences(text);
+    text = processImpliedCenturyReferences(text);
 
     //Processes written millennium references (e.g., "fourth millennium BC" → "4th millennium BC")
     text = processWrittenMillennia(text);
@@ -1801,7 +1877,7 @@ function processTextNode(node) {
 function walkDOMAndProcess(node) {
     if (node.nodeType === Node.ELEMENT_NODE) {
         const tag = node.tagName.toLowerCase();
-        if (["script", "style", "textarea", "input", "a", "code"].includes(tag)) return;
+        if (["script", "style", "textarea", "input", "code"].includes(tag)) return;
         node.childNodes.forEach(walkDOMAndProcess);
     } else if (node.nodeType === Node.TEXT_NODE) {
         processTextNode(node);
