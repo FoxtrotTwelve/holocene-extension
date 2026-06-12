@@ -72,7 +72,7 @@ const rangeRegex = new RegExp(
   `(?:(AD|A\\.D\\.)\\s*)?` +              // group 2: prefix era
   `(\\d{1,3}(?:,\\d{3})*|\\d{1,6})` +     // group 3: start year
   `(?:\\s*(${ERA_PATTERN}))?` +            // group 4: start era (optional)
-  `\\s*(?:-|–|to|and)\\s*` +              // separator (includes "and")
+  `\\s*(?:-|–|~|to|and)\\s*` +             // separator (includes "and", "~")
   `(${FUZZY_MODIFIER})?` +                // group 5: fuzzy prefix (y2)
   `(\\d{1,3}(?:,\\d{3})*|\\d{1,6})` +     // group 6: end year
   `(?:\\s*(${ERA_PATTERN}))?` +            // group 7: end era (optional)
@@ -89,7 +89,14 @@ const centuryRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?(\\d+)(st|nd|rd|th)([-\\s]+)century(?:\\s+(${ERA_PATTERN}))?(\\s*)`,
   "gi"
 );
-//console.log("UPDATED CENTURY REGEX ACTIVE");
+//console.log("UPDATED CENTURY REGEX ACTIVE")
+
+const millenniumRegex = new RegExp(
+  `\\b(${FUZZY_MODIFIER})?` +
+  `(\\d+)(st|nd|rd|th)` +
+  `([-\\s]+)(?:millennium|millennia|millenia)(?:\\s+(${ERA_PATTERN}))?(\\s*)`,
+  "gi"
+);
 
 //Regex for Plural references (e.g., "1800s BCE"):
 //const pluralRegex = /\b(\d{1,4})s(?!\s*H\.E\.)\s*(${ERA_PATTERN})?\b/gi;
@@ -108,6 +115,18 @@ const writtenCenturyRegex = new RegExp(
   `sixteenth|seventeenth|eighteenth|nineteenth|` +
   `twentieth|thirtieth|fortieth|fiftieth|sixtieth|seventieth|eightieth|ninetieth)` +
   `\\s+century\\s*(${ERA_PATTERN})?\\b`,
+  "gi"
+);
+
+//Regex for written millennia:
+const writtenMillenniumRegex = new RegExp(
+  `\\b(${FUZZY_MODIFIER})?` +
+  `((?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-\\w+)?|` +
+  `first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|` +
+  `tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|` +
+  `sixteenth|seventeenth|eighteenth|nineteenth|` +
+  `twentieth|thirtieth|fortieth|fiftieth|sixtieth|seventieth|eightieth|ninetieth)` +
+  `\\s+(?:millennium|millennia|millenia)\\s*(${ERA_PATTERN})?\\b`,
   "gi"
 );
 
@@ -254,8 +273,9 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     //Plausible year range
     if (year < 10 || year > 3000) return false;
 
-    //Avoid times (e.g., 12:30)
-    if (nodeValue[index - 1] === ":" || nodeValue[index + match.length] === ":") return false;
+    //Avoid times (e.g., 12:30) — only block colon when it is part of a time format (digit follows)
+    if (nodeValue[index - 1] === ":") return false;  // minutes position (MM in H:MM)
+    if (nodeValue[index + match.length] === ":" && /\d/.test(nodeValue[index + match.length + 1] || '')) return false;
 
     //Avoid being part of a longer number with punctuation
     if (nodeValue[index - 1] && /\d/.test(nodeValue[index - 1])) return false;
@@ -927,6 +947,9 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     ]);
 
     if (year < 1000) {
+        // Timeline date entry: "117: Description" — colon guard above ensures ':' is not followed by a digit here
+        if (nodeValue[index + match.length] === ':') return true;
+
         if (famousYearContexts.has(year)) {
             const fc = (before + ' ' + after).toLowerCase();
             if (famousYearContexts.get(year).some(kw => fc.includes(kw))) return true;
@@ -951,6 +974,13 @@ function isLikelyYearRange(y1, y2, prefixEra, era1, era2, text, offset, matchLen
     if (fuzzyPrefix) {
         const lower = fuzzyPrefix.toLowerCase();
         if (["c.", "ca.", "circa"].some(f => lower.includes(f))) return true;
+    }
+
+    // Timeline entry: "100 – 940: Kingdom of Aksum" — range immediately followed by colon (non-time)
+    if (text[offset + matchLength] === ':' && !/\d/.test(text[offset + matchLength + 1] || '')) {
+        const immediatelyBefore = text.slice(Math.max(0, offset - 30), offset).toLowerCase();
+        const nonDateLabel = /\b(?:chapter|section|article|episode|track|no\.|number|page|item|part|vol\.?|figure|fig|exhibit|appendix|floor|room|gate|exit)\s*$/i;
+        if (!nonDateLabel.test(immediatelyBefore)) return true;
     }
 
     // Look at surrounding words, clipped to the current sentence
@@ -1303,6 +1333,34 @@ function processCenturyReferences(text) {
     });
 }
 
+function processMillenniumReferences(text) {
+    return text.replace(millenniumRegex, (match, fuzzyPrefix, numericStr, ordinalSuffix, separator, eraStr, trailingSpace, offset, fullText) => {
+        if (isInsideConvertedText(fullText, offset)) return match;
+        if (match.includes("H.E.")) return match;
+
+        const formattedPrefix = formatPrefix(fuzzyPrefix);
+        const millenniumNumber = parseInt(numericStr, 10);
+        const ordinalPart = `${numericStr}${ordinalSuffix}`;
+        const era = normalizeEra(eraStr || "CE");
+
+        let baseNumber;
+        if (era === "BCE") {
+            baseNumber = millenniumNumber * 1000;
+        } else {
+            baseNumber = (millenniumNumber - 1) * 1000;
+        }
+
+        let convertedNumber = convertYear(baseNumber, era);
+
+        if (era === "BCE" || era === "BC") {
+            convertedNumber -= 1;
+        }
+
+        const eraLabel = eraStr ? " " + normalizeEra(eraStr) : "";
+        return `${formattedPrefix}${convertedNumber}s H.E. (Holocene Era) [converted from ${ordinalPart}${separator}millennium${eraLabel}]${trailingSpace}`;
+    });
+}
+
 //Turns written out ordinal numbers into numerals, then process Century References will turn them into plural form
 function processWrittenCenturies(text) {
     //Normalizes the spacing of ordinal numbers that have dashes or spaces
@@ -1325,6 +1383,25 @@ function processWrittenCenturies(text) {
 
         //console.log("Processed in WRITTEN CENTURIES");
         return `${prefix}${num}${suffix} century${era ? " " + era : ""}`;
+    }
+  );
+}
+
+function processWrittenMillennia(text) {
+    text = normalizeOrdinalSpacing(text);
+    return text.replace(
+        writtenMillenniumRegex,
+        (match, fuzzy, word, era, offset, fullText) => {
+        if (isInsideConvertedText(fullText, offset)) return match;
+        if (match.includes("H.E.")) return match;
+
+        const num = parseWrittenOrdinal(word);
+        if (!num) return match;
+
+        const prefix = formatPrefix(fuzzy);
+        const suffix = getOrdinalSuffix(num);
+
+        return `${prefix}${num}${suffix} millennium${era ? " " + era : ""}`;
     }
   );
 }
@@ -1633,6 +1710,12 @@ function processText(text) {
 
     //Processes century number references and converts them to plural century references
     text = processCenturyReferences(text);
+
+    //Processes written millennium references (e.g., "fourth millennium BC" → "4th millennium BC")
+    text = processWrittenMillennia(text);
+
+    //Processes millennium number references (e.g., "4th millennium BC" → "6000s H.E.")
+    text = processMillenniumReferences(text);
     const centuriesConvertedTagSafeBox = [];
     text = text.replace(masterConvertedRegex, (match) => {
         const id = centuriesConvertedTagSafeBox.length;
@@ -2426,8 +2509,14 @@ const allTests = [
     { input: "Sōkrátēs; c. 470 – 399 BC", 
         expected: "Sōkrátēs; c. 9531–9602 H.E. (Holocene Era) [converted from 470 BCE–399 BCE]" },
     { input: "c. 470 BC", 
-        expected: "c. 9531 H.E. (Holocene Era) [converted from 470 BCE]" }
+        expected: "c. 9531 H.E. (Holocene Era) [converted from 470 BCE]" },
 
+    // --- TIMELINE OF ANCIENT HISTORY ---
+    { input: "Late 4th millennium BC", 
+        expected: "Late 6000s H.E. (Holocene Era) [converted from 4th millennium BCE]" },
+    { input: "470~469 BC: Birth of Socrates.",
+        expected: "9531–9532 H.E. (Holocene Era) [converted from 470 BCE–469 BCE]: Birth of Socrates." }
+    
 ];
 
 let failCounter = 0;
