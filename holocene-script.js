@@ -1559,6 +1559,8 @@ function processDecadeAbbreviatedRanges(text) {
 }
 
 function processText(text) {
+    // Normalize Unicode thin spaces (U+2009) to regular spaces — common in Wikipedia text
+    text = text.replace(/ /g, ' ');
     const chainPlaceholders = [];
     const rangePlaceholders = [];
     const decadePlaceholders = [];
@@ -2418,8 +2420,13 @@ const allTests = [
     { input: "By the time the battle ended, 3,057 Japanese had died. Casualties aboard the four carriers were: Akagi: 267; Kaga: 811; Hiryū: 392 (including Yamaguchi who chose to go down with his ship); Soryū: 711 (including Captain Yanagimoto, who chose to remain on board); a total of 2,181.[159] The heavy cruisers Mikuma (sunk; 700 casualties) and Mogami (badly damaged; 92) accounted for another 792 deaths.", 
         expected: "By the time the battle ended, 3,057 Japanese had died. Casualties aboard the four carriers were: Akagi: 267; Kaga: 811; Hiryū: 392 (including Yamaguchi who chose to go down with his ship); Soryū: 711 (including Captain Yanagimoto, who chose to remain on board); a total of 2,181.[159] The heavy cruisers Mikuma (sunk; 700 casualties) and Mogami (badly damaged; 92) accounted for another 792 deaths." },
     { input: "Some authors have stated that heavy losses in carriers and veteran aircrews at Midway permanently weakened the Imperial Japanese Navy.[193] Parshall and Tully have stated that the heavy losses in veteran aircrew (110, just under 25% of the aircrew embarked on the four carriers)[194] were not crippling to the Japanese naval air corps as a whole; the Japanese navy had 2,000 carrier-qualified aircrews at the start of the Pacific War.", 
-        expected: "Some authors have stated that heavy losses in carriers and veteran aircrews at Midway permanently weakened the Imperial Japanese Navy.[193] Parshall and Tully have stated that the heavy losses in veteran aircrew (110, just under 25% of the aircrew embarked on the four carriers)[194] were not crippling to the Japanese naval air corps as a whole; the Japanese navy had 2,000 carrier-qualified aircrews at the start of the Pacific War." }
+        expected: "Some authors have stated that heavy losses in carriers and veteran aircrews at Midway permanently weakened the Imperial Japanese Navy.[193] Parshall and Tully have stated that the heavy losses in veteran aircrew (110, just under 25% of the aircrew embarked on the four carriers)[194] were not crippling to the Japanese naval air corps as a whole; the Japanese navy had 2,000 carrier-qualified aircrews at the start of the Pacific War." },
 
+    // --- SOCRATES ---
+    { input: "Sōkrátēs; c. 470 – 399 BC", 
+        expected: "Sōkrátēs; c. 9531–9602 H.E. (Holocene Era) [converted from 470 BCE–399 BCE]" },
+    { input: "c. 470 BC", 
+        expected: "c. 9531 H.E. (Holocene Era) [converted from 470 BCE]" }
 
 ];
 
