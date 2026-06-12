@@ -359,6 +359,8 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         'op.', 'opus', 'no.', 'bwv', 'hob.',
         // Location / contact designators
         'suite', 'unit', 'ext.', 'extension', 'zip', 'postcode',
+        // Sequential step / rule / reference designators
+        'step', 'rule', 'verse', 'line', 'bug', 'issue', 'item', 'ticket', 'psalm', 'clause', 'paragraph',
     ]);
     if (precedingInhibitors.has(immPrecWord)) return false;
 
@@ -947,8 +949,9 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     ]);
 
     if (year < 1000) {
-        // Timeline date entry: "117: Description" — colon guard above ensures ':' is not followed by a digit here
-        if (nodeValue[index + match.length] === ':') return true;
+        // Timeline date entry: "117: Description" — colon guard above ensures ':' is not followed by a digit here.
+        // Year must be ≥ 50 to avoid converting small step/rule/list numbers that slip past inhibitors.
+        if (year >= 50 && nodeValue[index + match.length] === ':') return true;
 
         if (famousYearContexts.has(year)) {
             const fc = (before + ' ' + after).toLowerCase();
@@ -2505,13 +2508,13 @@ const allTests = [
     { input: "Some authors have stated that heavy losses in carriers and veteran aircrews at Midway permanently weakened the Imperial Japanese Navy.[193] Parshall and Tully have stated that the heavy losses in veteran aircrew (110, just under 25% of the aircrew embarked on the four carriers)[194] were not crippling to the Japanese naval air corps as a whole; the Japanese navy had 2,000 carrier-qualified aircrews at the start of the Pacific War.", 
         expected: "Some authors have stated that heavy losses in carriers and veteran aircrews at Midway permanently weakened the Imperial Japanese Navy.[193] Parshall and Tully have stated that the heavy losses in veteran aircrew (110, just under 25% of the aircrew embarked on the four carriers)[194] were not crippling to the Japanese naval air corps as a whole; the Japanese navy had 2,000 carrier-qualified aircrews at the start of the Pacific War." },
 
-    // --- SOCRATES ---
+    // --- SOCRATES WIKIPEDIA ---
     { input: "Sōkrátēs; c. 470 – 399 BC", 
         expected: "Sōkrátēs; c. 9531–9602 H.E. (Holocene Era) [converted from 470 BCE–399 BCE]" },
     { input: "c. 470 BC", 
         expected: "c. 9531 H.E. (Holocene Era) [converted from 470 BCE]" },
 
-    // --- TIMELINE OF ANCIENT HISTORY ---
+    // --- TIMELINE OF ANCIENT HISTORY WIKIPEDIA ---
     { input: "Late 4th millennium BC", 
         expected: "Late 6000s H.E. (Holocene Era) [converted from 4th millennium BCE]" },
     { input: "470~469 BC: Birth of Socrates.",
