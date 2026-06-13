@@ -3,7 +3,13 @@
 const ERA_PATTERN = "BCE|BC|CE|AD|BP|A\\.D\\.|B\\.C\\.E\\.|B\\.C\\.|C\\.E\\.|B\\.P\\.|\\(BCE\\)|\\(BC\\)|\\(CE\\)|\\(AD\\)|\\(BP\\)|\\(B.C.E.\\)|\\(B.C.\\)|\\(C.E.\\)|\\(A.D.\\)|\\(B.P.\\)";
 
 //The most likely strings to find around uncertain dates
-const FUZZY_MODIFIER = "(?:early|mid-|late|c\\.|ca\\.|circa|~|around)\\s*";
+const FUZZY_MODIFIER = "(?:early|mid-|late|c\\.|ca\\.|circa|~|around|about)\\s*";
+
+const MONTHS_SET = new Set([
+    'january','february','march','april','may','june','july',
+    'august','september','october','november','december',
+    'jan','feb','mar','apr','jun','jul','aug','sep','sept','oct','nov','dec'
+]);
 
 //Oridinal number variables:
 const ORDINAL_ONES = {
@@ -90,6 +96,24 @@ const centuryRegex = new RegExp(
   "gi"
 );
 //console.log("UPDATED CENTURY REGEX ACTIVE")
+
+// Written ordinal word alternatives — used by centuryRangeRegex for the first term
+const WRITTEN_ORDINAL_ALT =
+    '(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:-\\w+)?' +
+    '|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|' +
+    'tenth|eleventh|twelfth|thirteenth|fourteenth|fifteenth|' +
+    'sixteenth|seventeenth|eighteenth|nineteenth|' +
+    'twentieth|thirtieth|fortieth|fiftieth|sixtieth|seventieth|eightieth|ninetieth';
+
+const centuryRangeRegex = new RegExp(
+  `\\b(${FUZZY_MODIFIER})?` +
+  `((?:${WRITTEN_ORDINAL_ALT})|\\d+)(st|nd|rd|th)?` +
+  `(\\s*(?:through|to|and|-|–)\\s*)` +
+  `(\\d+)(st|nd|rd|th)` +
+  `\\s+(?:centuries|century)(?:\\s+(${ERA_PATTERN}))?(\\s*)`,
+  "gi"
+);
+// Groups: 1=fuzzy, 2=first(word/num), 3=ordSuffix1, 4=connector, 5=second, 6=ordSuffix2, 7=era, 8=trailing
 
 const impliedCenturyRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?(\\d+)(st|nd|rd|th)\\s+(${ERA_PATTERN})(?![a-zA-Z])(\\s*)`,
@@ -283,6 +307,12 @@ function convertHundredYear(year, era) {
     } else {
         return year + 10000; // AD / CE
     }
+}
+
+//Returns true if the last word in rawBefore is a month name
+function isMonthNameBefore(rawBefore) {
+    const lastWord = rawBefore.match(/\b([a-z]+)\s*$/i);
+    return lastWord ? MONTHS_SET.has(lastWord[1].toLowerCase()) : false;
 }
 
 //Check for strings that might be non-dates
@@ -897,17 +927,11 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         if (prepNonYearContext.has(wordBeforePrep)) return false;
     }
 
-    // Month name directly before a 4-digit year overrides count-noun blocks.
-    // Capped at year >= 1000 so "March 300 soldiers" still blocks on the count-noun check.
-    if (year >= 1000) {
-        const MONTHS_SET = new Set([
-            'january','february','march','april','may','june','july',
-            'august','september','october','november','december',
-            'jan','feb','mar','apr','jun','jul','aug','sep','sept','oct','nov','dec'
-        ]);
-        const lastWordBefore = before.match(/\b([a-z]+)\s*$/);
-        if (lastWordBefore && MONTHS_SET.has(lastWordBefore[1])) return true;
-    }
+    // Month name directly before any year ≥ 50 overrides count-noun blocks ("January 814 of Charlemagne").
+    if (year >= 50 && isMonthNameBefore(rawBefore)) return true;
+    // Temporal preposition before a sub-1000 year overrides count-noun checks ("in 795 by raids").
+    // Scoped to year < 1000 only — year ≥ 1000 already defaults to convert and relies on count-noun blocking.
+    if (year >= 50 && year < 1000 && /\b(?:in|by|until|after|before|since|from|around|about)\s*$/i.test(rawBefore)) return true;
 
     const nearbyMatch = after.match(/^\s*([a-z]+)(?:\s+([a-z]+))?/);
     if (nearbyMatch) {
@@ -971,6 +995,7 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         // Timeline date entry: "117: Description" — colon guard above ensures ':' is not followed by a digit here.
         // Year must be ≥ 50 to avoid converting small step/rule/list numbers that slip past inhibitors.
         if (year >= 50 && nodeValue[index + match.length] === ':') return true;
+        // (Temporal prepositions and month names before the year are handled above the count-noun block.)
 
         if (famousYearContexts.has(year)) {
             const fc = (before + ' ' + after).toLowerCase();
@@ -992,11 +1017,16 @@ function isLikelyYearRange(y1, y2, prefixEra, era1, era2, text, offset, matchLen
     // descending without era → ambiguous → don't convert
     if (y1 > y2) return false;
 
-    // fuzzy modifiers like "c.", "ca.", "circa" indicate a date
+    // fuzzy modifiers like "c.", "ca.", "circa", "around", "about" indicate a date
     if (fuzzyPrefix) {
         const lower = fuzzyPrefix.toLowerCase();
-        if (["c.", "ca.", "circa"].some(f => lower.includes(f))) return true;
+        if (["c.", "ca.", "circa", "around", "about"].some(f => lower.includes(f))) return true;
     }
+
+    // Temporal preposition immediately before the range: "back to 700–750", "from 800–1300"
+    // Cap at 9999 to avoid falsely matching non-date large numbers like "ranging from 90,000 to 800,000"
+    const rawBeforeRange = text.slice(Math.max(0, offset - 25), offset);
+    if (y1 <= 9999 && y2 <= 9999 && /\b(?:in|by|from|to|until|after|before|since|around|about|between)\s*$/i.test(rawBeforeRange)) return true;
 
     // Timeline entry: "100 – 940: Kingdom of Aksum" — range immediately followed by colon (non-time)
     if (text[offset + matchLength] === ':' && !/\d/.test(text[offset + matchLength + 1] || '')) {
@@ -1323,6 +1353,34 @@ function processPluralReferences(text) {
 
         //console.log("Processed in PLURAL REF");
         return `${formattedPrefix}${convertedNumber}${hasS ? "s" : ""} H.E. (Holocene Era) [converted from ${numberStr}s ${eraStr || "CE"}]`;
+    });
+}
+
+//Converts century ranges (e.g., "10th and 11th centuries", "eighth through 11th centuries") to H.E., converting each century individually and preserving the connector word
+function processCenturyRanges(text) {
+    return text.replace(centuryRangeRegex, (match, fuzzy, first, ordSuffix1, connector, second, ordSuffix2, eraStr, trailing, offset, fullText) => {
+        if (isInsideConvertedText(fullText, offset)) return match;
+        if (match.includes("H.E.")) return match;
+
+        const era = normalizeEra(eraStr || "CE");
+        const eraLabel = " " + era;
+
+        const n1 = /^\d+$/.test(first) ? parseInt(first, 10) : parseWrittenOrdinal(first);
+        if (!n1) return match;
+        const suf1 = ordSuffix1 || getOrdinalSuffix(n1);
+
+        const n2 = parseInt(second, 10);
+        const suf2 = ordSuffix2;
+
+        const base1 = era === "BCE" ? n1 * 100 : (n1 - 1) * 100;
+        const base2 = era === "BCE" ? n2 * 100 : (n2 - 1) * 100;
+        let conv1 = convertYear(base1, era);
+        let conv2 = convertYear(base2, era);
+        if (era === "BCE" || era === "BC") { conv1 -= 1; conv2 -= 1; }
+
+        const prefix = formatPrefix(fuzzy);
+
+        return `${prefix}${conv1}s H.E. (Holocene Era) [converted from ${n1}${suf1} century${eraLabel}]${connector}${conv2}s H.E. (Holocene Era) [converted from ${n2}${suf2} century${eraLabel}]${trailing}`;
     });
 }
 
@@ -1715,6 +1773,9 @@ function processDecadeAbbreviatedRanges(text) {
 function processText(text) {
     // Normalize Unicode thin spaces (U+2009) to regular spaces — common in Wikipedia text
     text = text.replace(/ /g, ' ');
+    // Normalize prefix-era years: "A.D. 793" / "AD 793" → "793 CE" so processSingleYears handles them
+    text = text.replace(/\b(AD|A\.D\.)\s+(\d{1,6})(?!\s*(?:BCE|BC|CE|AD|BP|A\.D\.|C\.E\.|B\.C\.|B\.P\.))/gi, '$2 CE');
+
     const chainPlaceholders = [];
     const rangePlaceholders = [];
     const decadePlaceholders = [];
@@ -1780,6 +1841,9 @@ function processText(text) {
         writtenHundredsYearsConvertedTagSafeBox.push(match);
         return `__WRITTEN_HUNDREDS_YEARS_TAG_${id}__`;
     });
+
+    //Processes century ranges (e.g., "10th and 11th centuries") before individual century handling
+    text = processCenturyRanges(text);
 
     //Processes written century numbers and converts them to numbers for the next step
     text = processWrittenCenturies(text);
@@ -1885,7 +1949,7 @@ function walkDOMAndProcess(node) {
 }
 
 // Kick it off from the body
-walkDOMAndProcess(document.body);
+if (typeof document !== 'undefined') walkDOMAndProcess(document.body);
 
 //-----------------------------------------------
 
@@ -2594,8 +2658,35 @@ const allTests = [
     { input: "Late 4th millennium BC", 
         expected: "Late 6000s H.E. (Holocene Era) [converted from 4th millennium BCE]" },
     { input: "470~469 BC: Birth of Socrates.",
-        expected: "9531–9532 H.E. (Holocene Era) [converted from 470 BCE–469 BCE]: Birth of Socrates." }
+        expected: "9531–9532 H.E. (Holocene Era) [converted from 470 BCE–469 BCE]: Birth of Socrates." },
     
+    // --- VIKING AGE WIKIPEDIA ---
+    { input: "The Viking Age (about 800–1050 CE) was the period during the Middle Ages", 
+        expected: "The Viking Age (about 10800–11050 H.E. (Holocene Era) [converted from 800 CE–1050 CE]) was the period during the Middle Ages" },
+    { input: "Judith Jesch has argued that the start of the Viking Age can be pushed back to 700–750, as it was unlikely that the Lindisfarne attack was the first attack",
+        expected: "Judith Jesch has argued that the start of the Viking Age can be pushed back to 10700–10750 H.E. (Holocene Era) [converted from 700–750 CE], as it was unlikely that the Lindisfarne attack was the first attack" },
+    { input: "Their North Germanic language, Old Norse, became the precursor to present-day Scandinavian languages. By 801, a strong central authority appears to have been established in Jutland, and the Danes were beginning to look beyond their own territory for land, trade, and plunder.",
+        expected: "Their North Germanic language, Old Norse, became the precursor to present-day Scandinavian languages. By 10801 H.E. (Holocene Era) [converted from 801 CE], a strong central authority appears to have been established in Jutland, and the Danes were beginning to look beyond their own territory for land, trade, and plunder." },
+    { input: "Debate among scholars is ongoing as to why the Scandinavians began to expand from the eighth through 11th centuries. Various factors have been highlighted: demographic, economic, ideological, political, technological, and environmental models.", 
+        expected: "Debate among scholars is ongoing as to why the Scandinavians began to expand from the 10700s H.E. (Holocene Era) [converted from 8th century CE] through 11000s H.E. (Holocene Era) [converted from 11th century CE]. Various factors have been highlighted: demographic, economic, ideological, political, technological, and environmental models." },
+    { input: "Debate among scholars is ongoing as to why the Scandinavians began to expand from the eighth through 11th centuries. Various factors have been highlighted: demographic, economic, ideological, political, technological, and environmental models.",
+        expected: "Debate among scholars is ongoing as to why the Scandinavians began to expand from the 10700s H.E. (Holocene Era) [converted from 8th century CE] through 11000s H.E. (Holocene Era) [converted from 11th century CE]. Various factors have been highlighted: demographic, economic, ideological, political, technological, and environmental models." },
+    { input: "This era coincided with the Medieval Warm Period (800–1300) and stopped with the start of the Little Ice Age (about 1250–1850). The start of the Viking Age, with the sack of Lindisfarne, also coincided with Charlemagne's Saxon Wars, or Christian wars with pagans in Saxony.",
+        expected: "This era coincided with the Medieval Warm Period (10800–11300 H.E. (Holocene Era) [converted from 800–1300 CE]) and stopped with the start of the Little Ice Age (about 11250–11850 H.E. (Holocene Era) [converted from 1250–1850 CE]). The start of the Viking Age, with the sack of Lindisfarne, also coincided with Charlemagne's Saxon Wars, or Christian wars with pagans in Saxony." },
+    { input: "especially after the death in January 814 of Charlemagne, made them attractive targets for Viking raiders", 
+        expected: "especially after the death in January 10814 H.E. (Holocene Era) [converted from 814 CE] of Charlemagne, made them attractive targets for Viking raiders" },
+    { input: "The beginning of the Viking Age in the British Isles is often set at 793.", 
+        expected: "The beginning of the Viking Age in the British Isles is often set at 10793 H.E. (Holocene Era) [converted from 793 CE]." },
+    { input: "A.D. 793. This year came dreadful fore-warnings over the land of the Northumbrians, terrifying the people most woefully",
+        expected: "10793 H.E. (Holocene Era) [converted from 793 CE]. This year came dreadful fore-warnings over the land of the Northumbrians, terrifying the people most woefully" },
+    { input: "In 794, according to the Annals of Ulster, a serious attack was made on Lindisfarne's mother-house of Iona, which was followed in 795 by raids upon the northern coast of Ireland. From bases there, the Norsemen attacked Iona again in 802, causing great slaughter amongst the Céli Dé Brethren, and burning the abbey to the ground.", 
+        expected: "In 10794 H.E. (Holocene Era) [converted from 794 CE], according to the Annals of Ulster, a serious attack was made on Lindisfarne's mother-house of Iona, which was followed in 10795 H.E. (Holocene Era) [converted from 795 CE] by raids upon the northern coast of Ireland. From bases there, the Norsemen attacked Iona again in 10802 H.E. (Holocene Era) [converted from 802 CE], causing great slaughter amongst the Céli Dé Brethren, and burning the abbey to the ground." },
+    { input: "The Vikings primarily targeted Ireland until 830, as England and the Carolingian Empire were able to fight the Vikings off.[39] However, after 830 CE, the Vikings had considerable success against England, the Carolingian Empire, and other parts of Western Europe.[39] After 830, the Vikings exploited disunity within the Carolingian Empire, as well as pitting the English kingdoms against each other.", 
+        expected: "The Vikings primarily targeted Ireland until 10830 H.E. (Holocene Era) [converted from 830 CE], as England and the Carolingian Empire were able to fight the Vikings off.[39] However, after 10830 H.E. (Holocene Era) [converted from 830 CE], the Vikings had considerable success against England, the Carolingian Empire, and other parts of Western Europe.[39] After 10830 H.E. (Holocene Era) [converted from 830 CE], the Vikings exploited disunity within the Carolingian Empire, as well as pitting the English kingdoms against each other." },
+    { input: "In the 10th and 11th centuries, Saxons and Slavs began to use trained mobile cavalry successfully against Viking foot soldiers, making it hard for Viking invaders to fight inland", 
+        expected: "In the 10900s H.E. (Holocene Era) [converted from 10th century CE] and 11000s H.E. (Holocene Era) [converted from 11th century CE], Saxons and Slavs began to use trained mobile cavalry successfully against Viking foot soldiers, making it hard for Viking invaders to fight inland" }
+
+
 ];
 
 let failCounter = 0;
