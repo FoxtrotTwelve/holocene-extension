@@ -11,6 +11,10 @@ const MONTHS_SET = new Set([
     'jan','feb','mar','apr','jun','jul','aug','sep','sept','oct','nov','dec'
 ]);
 
+// DOM sibling text context — set by processTextNode, read by isLikelyUnlabeledYear
+let _domSiblingBefore = '';
+let _domSiblingAfter  = '';
+
 //Oridinal number variables:
 const ORDINAL_ONES = {
   first: 1, second: 2, third: 3, fourth: 4, fifth: 5,
@@ -108,7 +112,7 @@ const WRITTEN_ORDINAL_ALT =
 const centuryRangeRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?` +
   `((?:${WRITTEN_ORDINAL_ALT})|\\d+)(st|nd|rd|th)?` +
-  `(\\s*(?:through|to|and|-|–)\\s*)` +
+  `(\\s*(?:through|to|and|-|–)\\s*(?:the\\s+)?)` +
   `(\\d+)(st|nd|rd|th)` +
   `\\s+(?:centuries|century)(?:\\s+(${ERA_PATTERN}))?(\\s*)`,
   "gi"
@@ -953,6 +957,8 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
 
     // Fuzzy modifier immediately before → approximate date, allow through
     if (/(?:~|c\.|ca\.|circa|around|approximately|approx\.)\s*$/i.test(rawBefore)) return true;
+    // Fuzzy modifier in DOM sibling (e.g. <abbr>c.</abbr> preceding the text node)
+    if (_domSiblingBefore && /(?:\bc\.|ca\.|circa|around|approximately|approx\.|~)\s*$/i.test(_domSiblingBefore)) return true;
 
     // Famous years — well-known historical dates that may appear without era labels.
     // For sub-100 CE years (33, 79): convert as CE.
@@ -998,7 +1004,25 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         // (Temporal prepositions and month names before the year are handled above the count-noun block.)
 
         if (famousYearContexts.has(year)) {
-            const fc = (before + ' ' + after).toLowerCase();
+            // Build extended context filling up to 60 chars on each side from sibling nodes
+            // (sibling vars are '' in test/Node mode — behaviour unchanged there)
+            const nodeTextBefore = nodeValue.slice(0, index);
+            const sibFill        = Math.max(0, 60 - nodeTextBefore.length);
+            const extRawBefore   = (_domSiblingBefore.slice(-sibFill) + nodeTextBefore).slice(-60);
+
+            const nodeTextAfter  = nodeValue.slice(index + match.length);
+            const sibFill2       = Math.max(0, 60 - Math.min(nodeTextAfter.length, 60));
+            const extRawAfter    = (nodeTextAfter.slice(0, 60) + _domSiblingAfter.slice(0, sibFill2)).slice(0, 60);
+
+            // Apply same sentence-boundary trimming used for before/after
+            let lb = 0; let bm2;
+            const sbRe = /[.!?]\s*(?=[A-Z])/g;
+            while ((bm2 = sbRe.exec(extRawBefore)) !== null) lb = bm2.index + bm2[0].length;
+            const extBefore = extRawBefore.slice(lb).toLowerCase();
+            const fse = /[.!?]\s*(?=[A-Z])/.exec(extRawAfter);
+            const extAfter = (fse ? extRawAfter.slice(0, fse.index + 1) : extRawAfter).toLowerCase();
+
+            const fc = extBefore + ' ' + extAfter;
             if (famousYearContexts.get(year).some(kw => fc.includes(kw))) return true;
         }
         return false;  // sub-1000 without evidence → not a year
@@ -1023,10 +1047,17 @@ function isLikelyYearRange(y1, y2, prefixEra, era1, era2, text, offset, matchLen
         if (["c.", "ca.", "circa", "around", "about"].some(f => lower.includes(f))) return true;
     }
 
+    // Fuzzy modifier in DOM sibling context (e.g. <abbr>c.</abbr><span> 995-1020</span>)
+    if (!fuzzyPrefix && _domSiblingBefore && /(?:\bc\.|ca\.|circa|around|about|~)\s*$/i.test(_domSiblingBefore)) return true;
+
     // Temporal preposition immediately before the range: "back to 700–750", "from 800–1300"
     // Cap at 9999 to avoid falsely matching non-date large numbers like "ranging from 90,000 to 800,000"
     const rawBeforeRange = text.slice(Math.max(0, offset - 25), offset);
     if (y1 <= 9999 && y2 <= 9999 && /\b(?:in|by|from|to|until|after|before|since|around|about|between)\s*$/i.test(rawBeforeRange)) return true;
+
+    // Parenthetical date annotation: "Topic (800–1300)" — opening paren immediately before range.
+    // Handles DOM text nodes that lack broader sentence context (e.g., split at a surrounding link).
+    if (offset >= 1 && text[offset - 1] === '(') return true;
 
     // Timeline entry: "100 – 940: Kingdom of Aksum" — range immediately followed by colon (non-time)
     if (text[offset + matchLength] === ':' && !/\d/.test(text[offset + matchLength + 1] || '')) {
@@ -1082,11 +1113,19 @@ function isLikelyYearRange(y1, y2, prefixEra, era1, era2, text, offset, matchLen
     // Use word-boundary matching to avoid false positives from substrings
     // (e.g. "ce" inside "centimeters", "in" inside "interesting")
     // Indicators ending in a word char get \b on both sides; those ending in punctuation only at start.
+    // For year-sized values (≥ 800), also check DOM sibling context so that unlabeled ranges
+    // immediately following a converted year or hyperlinked entity still convert
+    // (e.g. "<a>London</a> 1018–1066" when the preceding sibling already contains "H.E." / "CE").
+    const sibCtxBefore = (y1 >= 800 && _domSiblingBefore) ? _domSiblingBefore.slice(-60).toLowerCase() : '';
+    const sibCtxAfter  = (y2 >= 800 && _domSiblingAfter)  ? _domSiblingAfter.slice(0, 60).toLowerCase()  : '';
+
     return dateIndicators.some(indicator => {
         const escaped = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const endBoundary = /\w$/.test(indicator) ? '\\b' : '';
         const pattern = new RegExp(`\\b${escaped}${endBoundary}`, 'i');
-        return pattern.test(before) || pattern.test(after);
+        return pattern.test(before) || pattern.test(after)
+            || (sibCtxBefore && pattern.test(sibCtxBefore))
+            || (sibCtxAfter  && pattern.test(sibCtxAfter));
     });
 }
 
@@ -1935,7 +1974,65 @@ function processText(text) {
 //----------------DOM WALKING-----------------
 
 function processTextNode(node) {
-    node.nodeValue = processText(node.nodeValue);
+    // Collect text from adjacent siblings (includes <a>/<abbr>/<span> text) up to 120 chars each side.
+    // If the text node is the sole child of an inline element (e.g. <span>), climb to the parent's
+    // siblings so that elements like <abbr>c.</abbr><span> 995-1020</span> share context.
+    let sibBefore = '';
+    let s = node.previousSibling;
+    if (!s && node.parentNode && node.parentNode !== document.body) {
+        s = node.parentNode.previousSibling;
+    }
+    while (s && sibBefore.length < 120) {
+        sibBefore = (s.textContent || '') + sibBefore;
+        s = s.previousSibling;
+    }
+    _domSiblingBefore = sibBefore.slice(-120);
+
+    let sibAfter = '';
+    s = node.nextSibling;
+    if (!s && node.parentNode && node.parentNode !== document.body) {
+        s = node.parentNode.nextSibling;
+    }
+    while (s && sibAfter.length < 120) {
+        sibAfter += (s.textContent || '');
+        s = s.nextSibling;
+    }
+    _domSiblingAfter = sibAfter.slice(0, 120);
+
+    // Detect era-only inline element immediately after this text node
+    // (e.g. Wikipedia's <abbr title="Common Era">CE</abbr> after a bare year).
+    // If found, append the era for processing and clear that element afterward.
+    let trailingEraNode = null;
+    let trailingEra = '';
+    {
+        let nextEl = node.nextSibling;
+        if (!nextEl && node.parentNode && node.parentNode !== document.body) {
+            nextEl = node.parentNode.nextSibling;
+        }
+        if (nextEl && nextEl.nodeType === Node.ELEMENT_NODE) {
+            const eraText = (nextEl.textContent || '').trim();
+            if (/^(?:BCE|BC|CE|AD|BP|A\.D\.|B\.C\.E\.|B\.C\.|C\.E\.|B\.P\.)$/i.test(eraText)) {
+                trailingEra = eraText;
+                trailingEraNode = nextEl;
+            }
+        }
+    }
+
+    if (trailingEra) {
+        const combined = node.nodeValue + trailingEra;
+        const converted = processText(combined);
+        if (converted !== combined) {
+            // Conversion used the era — store result and clear the now-redundant era element
+            node.nodeValue = converted;
+            trailingEraNode.textContent = '';
+        }
+        // else: nothing converted, leave both text node and era element untouched
+    } else {
+        node.nodeValue = processText(node.nodeValue);
+    }
+
+    _domSiblingBefore = '';
+    _domSiblingAfter  = '';
 }
 
 function walkDOMAndProcess(node) {
@@ -2446,7 +2543,7 @@ const allTests = [
 
     // Treaty / agreement years in parentheses — single years should convert; ranges may not
     { input: "The Treaty of Westphalia (1648) ended the Thirty Years War", expected: "The Treaty of Westphalia (11648 H.E. (Holocene Era) [converted from 1648 CE]) ended the Thirty Years War" },
-    { input: "Napoleon Bonaparte (1769–1821) was a French general", expected: "Napoleon Bonaparte (11769 H.E. (Holocene Era) [converted from 1769 CE]–11821 H.E. (Holocene Era) [converted from 1821 CE]) was a French general" },
+    { input: "Napoleon Bonaparte (1769–1821) was a French general", expected: "Napoleon Bonaparte (11769–11821 H.E. (Holocene Era) [converted from 1769–1821 CE]) was a French general" },
     { input: "[1492] Columbus arrived in the Americas that year", expected: "[11492 H.E. (Holocene Era) [converted from 1492 CE]] Columbus arrived in the Americas that year" },
 
     // Election years — "election" is not in strongIndicators
@@ -2684,8 +2781,13 @@ const allTests = [
     { input: "The Vikings primarily targeted Ireland until 830, as England and the Carolingian Empire were able to fight the Vikings off.[39] However, after 830 CE, the Vikings had considerable success against England, the Carolingian Empire, and other parts of Western Europe.[39] After 830, the Vikings exploited disunity within the Carolingian Empire, as well as pitting the English kingdoms against each other.", 
         expected: "The Vikings primarily targeted Ireland until 10830 H.E. (Holocene Era) [converted from 830 CE], as England and the Carolingian Empire were able to fight the Vikings off.[39] However, after 10830 H.E. (Holocene Era) [converted from 830 CE], the Vikings had considerable success against England, the Carolingian Empire, and other parts of Western Europe.[39] After 10830 H.E. (Holocene Era) [converted from 830 CE], the Vikings exploited disunity within the Carolingian Empire, as well as pitting the English kingdoms against each other." },
     { input: "In the 10th and 11th centuries, Saxons and Slavs began to use trained mobile cavalry successfully against Viking foot soldiers, making it hard for Viking invaders to fight inland", 
-        expected: "In the 10900s H.E. (Holocene Era) [converted from 10th century CE] and 11000s H.E. (Holocene Era) [converted from 11th century CE], Saxons and Slavs began to use trained mobile cavalry successfully against Viking foot soldiers, making it hard for Viking invaders to fight inland" }
-
+        expected: "In the 10900s H.E. (Holocene Era) [converted from 10th century CE] and 11000s H.E. (Holocene Era) [converted from 11th century CE], Saxons and Slavs began to use trained mobile cavalry successfully against Viking foot soldiers, making it hard for Viking invaders to fight inland" },
+    { input: "In Sweden, the reign of king Olof Skötkonung (c. 995–1020) is considered to be the transition from the Viking Age to the Middle Ages, because he was the first Christian king of the Swedes, and he is associated with a growing influence of the church in what is today southwestern and central Sweden.", 
+        expected: "In Sweden, the reign of king Olof Skötkonung (c. 10995–11020 H.E. (Holocene Era) [converted from 995–1020 CE]) is considered to be the transition from the Viking Age to the Middle Ages, because he was the first Christian king of the Swedes, and he is associated with a growing influence of the church in what is today southwestern and central Sweden." },
+    { input: "Scotland took its present form when it regained territory from the Norse between the 13th and the 15th centuries; the Western Isles and the Isle of Man remained under Scandinavian authority", 
+        expected: "Scotland took its present form when it regained territory from the Norse between the 11200s H.E. (Holocene Era) [converted from 13th century CE] and the 11400s H.E. (Holocene Era) [converted from 15th century CE]; the Western Isles and the Isle of Man remained under Scandinavian authority" },
+    { input: "The Vikings made several incursions in the years 859, 966 and 971, with intentions more diplomatic than bellicose, although an invasion in 971 was repelled when the Viking fleet was totally annihilated", 
+        expected: "The Vikings made several incursions in the years 10859 H.E. (Holocene Era) [converted from 859 CE], 10966 H.E. (Holocene Era) [converted from 966 CE] and 10971 H.E. (Holocene Era) [converted from 971 CE], with intentions more diplomatic than bellicose, although an invasion in 10971 H.E. (Holocene Era) [converted from 971 CE] was repelled when the Viking fleet was totally annihilated" }
 
 ];
 
