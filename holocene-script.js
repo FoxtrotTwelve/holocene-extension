@@ -960,6 +960,17 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     // Fuzzy modifier in DOM sibling (e.g. <abbr>c.</abbr> preceding the text node)
     if (_domSiblingBefore && /(?:\bc\.|ca\.|circa|around|approximately|approx\.|~)\s*$/i.test(_domSiblingBefore)) return true;
 
+    // Year-list: "in the years N1, N2 and N3" — sub-1000 years explicitly introduced by "years"
+    // rawBefore must contain only digits/commas/spaces (and optional "and") after "years",
+    // confirming no other words intervene. Guards against "over the years he scored 966 and 971".
+    if (year >= 50 && year < 1000) {
+        const yearListBefore = /\byears?\s+[\d,\s]*(?:and\s+)?$/i.test(rawBefore);
+        if (yearListBefore) {
+            if (/^\s*,\s*\d/.test(rawAfter) || /^\s*and\s+\d/i.test(rawAfter)) return true;
+            if (/\d+\s+and\s*$/i.test(rawBefore)) return true;
+        }
+    }
+
     // Famous years — well-known historical dates that may appear without era labels.
     // For sub-100 CE years (33, 79): convert as CE.
     // For historically-BCE years (44, 480, 490): also converts as CE when unlabeled —
@@ -1832,6 +1843,13 @@ function processText(text) {
     
     //Extracts ranges and replace with placeholders, storing surrounding context
     text = text.replace(rangeRegex, (match, _1, _2, _3, _4, _5, _6, _7, offset, string) => {
+        // "DIGIT, YEAR and YEAR" — digit+comma immediately before y1 means "and" is a list
+        // conjunction (e.g. "years 859, 966 and 971"), not a range connector.
+        // A plain clause comma ("times, 2020 and 2021") has no digit before it → not affected.
+        if (/\band\b/i.test(match)) {
+            const beforeY1 = string.slice(Math.max(0, offset - 15), offset);
+            if (/\d+\s*,\s*$/.test(beforeY1)) return match;
+        }
         const id = rangePlaceholders.length;
         const ctxStart = Math.max(0, offset - 80);
         rangePlaceholders.push({
