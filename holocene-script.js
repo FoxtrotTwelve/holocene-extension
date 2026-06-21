@@ -326,6 +326,7 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
     //Plausible year range
     if (year < 10 || year > 3000) return false;
 
+
     //Avoid times (e.g., 12:30) — only block colon when it is part of a time format (digit follows)
     if (nodeValue[index - 1] === ":") return false;  // minutes position (MM in H:MM)
     if (nodeValue[index + match.length] === ":" && /\d/.test(nodeValue[index + match.length + 1] || '')) return false;
@@ -721,7 +722,7 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
 
     const units = [
         // Length
-        "m", "km", "cm", "mm", "nm", "pm", "um", "dm", "mi", "ft", "yd", "au",
+        "m", "km", "cm", "mm", "nm", "pm", "um", "dm", "mi", "ft", "yd", "au", "nmi",
         // Mass / weight
         "kg", "g", "mg", "ug", "ng", "lb", "oz", "t", "ton",
         // Time (ms/s already caught by count noun check)
@@ -950,6 +951,14 @@ function isLikelyUnlabeledYear(match, nodeValue, index) {
         // For sub-1000 numbers, look past ANY plain modifier to word2 (e.g. "900 Roman deserters")
         // 4-digit years (≥1000) are exempt — "1944 German officers" should still convert
         if (year < 1000 && word2 && isCountNoun(word2)) return false;
+    }
+
+    // If rawAfter had no word (unit is in a sibling DOM element, e.g. Wikipedia convert template),
+    // check _domSiblingAfter so that "350 [<abbr>nmi</abbr>]" is still blocked.
+    if (!nearbyMatch && _domSiblingAfter) {
+        const sibAfterMatch = _domSiblingAfter.match(/^\s*([a-z]+)/i);
+        const sibAfterWord1 = sibAfterMatch ? sibAfterMatch[1].toLowerCase() : '';
+        if (units.includes(sibAfterWord1) || singularUnits.includes(sibAfterWord1)) return false;
     }
 
     // Count-noun check above wins; strong indicators only apply when no count noun blocked it
@@ -2744,7 +2753,9 @@ const allTests = [
         expected: "127 land-based aircraft" },
     { input: "~307 KIA", 
         expected: "~307 KIA" },
-    { input: "The Japanese Combined Fleet under the command of Isoroku Yamamoto suffered a decisive defeat by two carrier strike groups of the U.S. Pacific Fleet near Midway Atoll, about 1,300 mi (1,100 nmi; 2,100 km) northwest of Oahu.", 
+    { input: "The Vikings built settlements roughly 650 km (350 nmi; 400 mi) from the coast.",
+        expected: "The Vikings built settlements roughly 650 km (350 nmi; 400 mi) from the coast." },
+    { input: "The Japanese Combined Fleet under the command of Isoroku Yamamoto suffered a decisive defeat by two carrier strike groups of the U.S. Pacific Fleet near Midway Atoll, about 1,300 mi (1,100 nmi; 2,100 km) northwest of Oahu.",
         expected: "The Japanese Combined Fleet under the command of Isoroku Yamamoto suffered a decisive defeat by two carrier strike groups of the U.S. Pacific Fleet near Midway Atoll, about 1,300 mi (1,100 nmi; 2,100 km) northwest of Oahu." },
     { input: "Instead, Yamamoto selected Midway, a tiny atoll at the extreme northwest end of the Hawaiian Island chain, approximately 1,300 mi (1,100 nmi; 2,100 km) from Oahu.", 
         expected: "Instead, Yamamoto selected Midway, a tiny atoll at the extreme northwest end of the Hawaiian Island chain, approximately 1,300 mi (1,100 nmi; 2,100 km) from Oahu." },
