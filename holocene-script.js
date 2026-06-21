@@ -112,9 +112,9 @@ const WRITTEN_ORDINAL_ALT =
 const centuryRangeRegex = new RegExp(
   `\\b(${FUZZY_MODIFIER})?` +
   `((?:${WRITTEN_ORDINAL_ALT})|\\d+)(st|nd|rd|th)?` +
-  `(\\s*(?:through|to|and|-|–)\\s*(?:the\\s+)?)` +
+  `(\\s*(?:-\\s*or|through|to|and|or|-|–)\\s*(?:the\\s+)?)` +
   `(\\d+)(st|nd|rd|th)` +
-  `\\s+(?:centuries|century)(?:\\s+(${ERA_PATTERN}))?(\\s*)`,
+  `[-\\s]+(?:centuries|century)(?:\\s+(${ERA_PATTERN}))?(\\s*)`,
   "gi"
 );
 // Groups: 1=fuzzy, 2=first(word/num), 3=ordSuffix1, 4=connector, 5=second, 6=ordSuffix2, 7=era, 8=trailing
@@ -2815,8 +2815,10 @@ const allTests = [
         expected: "In Sweden, the reign of king Olof Skötkonung (c. 10995–11020 H.E. (Holocene Era) [converted from 995–1020 CE]) is considered to be the transition from the Viking Age to the Middle Ages, because he was the first Christian king of the Swedes, and he is associated with a growing influence of the church in what is today southwestern and central Sweden." },
     { input: "Scotland took its present form when it regained territory from the Norse between the 13th and the 15th centuries; the Western Isles and the Isle of Man remained under Scandinavian authority", 
         expected: "Scotland took its present form when it regained territory from the Norse between the 11200s H.E. (Holocene Era) [converted from 13th century CE] and the 11400s H.E. (Holocene Era) [converted from 15th century CE]; the Western Isles and the Isle of Man remained under Scandinavian authority" },
-    { input: "The Vikings made several incursions in the years 859, 966 and 971, with intentions more diplomatic than bellicose, although an invasion in 971 was repelled when the Viking fleet was totally annihilated", 
-        expected: "The Vikings made several incursions in the years 10859 H.E. (Holocene Era) [converted from 859 CE], 10966 H.E. (Holocene Era) [converted from 966 CE] and 10971 H.E. (Holocene Era) [converted from 971 CE], with intentions more diplomatic than bellicose, although an invasion in 10971 H.E. (Holocene Era) [converted from 971 CE] was repelled when the Viking fleet was totally annihilated" }
+    { input: "The Vikings made several incursions in the years 859, 966 and 971, with intentions more diplomatic than bellicose, although an invasion in 971 was repelled when the Viking fleet was totally annihilated",
+        expected: "The Vikings made several incursions in the years 10859 H.E. (Holocene Era) [converted from 859 CE], 10966 H.E. (Holocene Era) [converted from 966 CE] and 10971 H.E. (Holocene Era) [converted from 971 CE], with intentions more diplomatic than bellicose, although an invasion in 10971 H.E. (Holocene Era) [converted from 971 CE] was repelled when the Viking fleet was totally annihilated" },
+    { input: "traditions before they were recorded in 12th- or 13th-century literature",
+        expected: "traditions before they were recorded in 11100s H.E. (Holocene Era) [converted from 12th century CE]- or 11200s H.E. (Holocene Era) [converted from 13th century CE] literature" }
 
 ];
 
